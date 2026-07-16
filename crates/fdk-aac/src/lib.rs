@@ -3,6 +3,8 @@
 //! Pure Rust AAC codec and transport implementation, with optional legacy FDK
 //! C/C++ API wrappers behind the `ffi` feature.
 
+#![allow(clippy::cast_possible_truncation)]
+
 pub mod aac_encoder;
 pub mod adif;
 pub mod adts;
@@ -60,6 +62,7 @@ pub mod usac_stereo;
 pub mod usac_tcx;
 
 #[cfg(feature = "ffi")]
+#[deny(clippy::cast_possible_truncation)]
 mod ffi {
     use crate::adts::AdtsHeader;
     use std::{ffi::c_void, fmt, ptr};
@@ -263,7 +266,11 @@ mod ffi {
         pub fn audio_specific_config(&self) -> Result<Vec<u8>, EncoderError> {
             let mut raw = sys::AACENC_InfoStruct::default();
             check_encoder(unsafe { sys::aacEncInfo(self.handle, &mut raw) })?;
-            Ok(raw.confBuf[..raw.confSize as usize].to_vec())
+            let size = usize::try_from(raw.confSize).map_err(|_| invalid_encoder_input())?;
+            raw.confBuf
+                .get(..size)
+                .map(|bytes| bytes.to_vec())
+                .ok_or_else(invalid_encoder_input)
         }
 
         pub fn encode_interleaved_i16(
@@ -306,17 +313,17 @@ mod ffi {
             ];
             let mut out_id = sys::OUT_BITSTREAM_DATA;
             let mut in_sizes = [
-                std::mem::size_of_val(input) as i32,
-                std::mem::size_of_val(ancillary) as i32,
-                std::mem::size_of::<sys::AACENC_MetaData>() as i32,
+                encoder_i32_len(std::mem::size_of_val(input))?,
+                encoder_i32_len(std::mem::size_of_val(ancillary))?,
+                encoder_i32_len(std::mem::size_of::<sys::AACENC_MetaData>())?,
             ];
-            let mut out_size = output.len() as i32;
+            let mut out_size = encoder_i32_len(output.len())?;
             let mut in_element_sizes = [
-                std::mem::size_of::<i16>() as i32,
-                std::mem::size_of::<u8>() as i32,
-                std::mem::size_of::<sys::AACENC_MetaData>() as i32,
+                encoder_i32_len(std::mem::size_of::<i16>())?,
+                encoder_i32_len(std::mem::size_of::<u8>())?,
+                encoder_i32_len(std::mem::size_of::<sys::AACENC_MetaData>())?,
             ];
-            let mut out_element_size = std::mem::size_of::<u8>() as i32;
+            let mut out_element_size = encoder_i32_len(std::mem::size_of::<u8>())?;
 
             let in_desc = sys::AACENC_BufDesc {
                 numBufs: if metadata.is_some() { 3 } else { 2 },
@@ -333,15 +340,18 @@ mod ffi {
                 bufElSizes: &mut out_element_size,
             };
             let in_args = sys::AACENC_InArgs {
-                numInSamples: input.len() as i32,
-                numAncBytes: ancillary.len() as i32,
+                numInSamples: encoder_i32_len(input.len())?,
+                numAncBytes: encoder_i32_len(ancillary.len())?,
             };
             let mut out_args = sys::AACENC_OutArgs::default();
 
             check_encoder(unsafe {
                 sys::aacEncEncode(self.handle, &in_desc, &out_desc, &in_args, &mut out_args)
             })?;
-            Ok((out_args.numOutBytes as usize, out_args.numAncBytes as usize))
+            Ok((
+                checked_encoder_count(out_args.numOutBytes, output.len())?,
+                checked_encoder_count(out_args.numAncBytes, ancillary.len())?,
+            ))
         }
     }
 
@@ -397,18 +407,21 @@ mod ffi {
 
         pub fn configure_raw(&mut self, config: &mut [u8]) -> Result<(), DecoderError> {
             let mut ptr = config.as_mut_ptr();
-            let len = config.len() as u32;
+            let len = decoder_u32_len(config.len())?;
             check_decoder(unsafe { sys::aacDecoder_ConfigRaw(self.handle, &mut ptr, &len) })
         }
 
         pub fn fill(&mut self, input: &mut [u8]) -> Result<usize, DecoderError> {
             let mut ptr = input.as_mut_ptr();
-            let size = input.len() as u32;
+            let size = decoder_u32_len(input.len())?;
             let mut valid = size;
             check_decoder(unsafe {
                 sys::aacDecoder_Fill(self.handle, &mut ptr, &size, &mut valid)
             })?;
-            Ok((size - valid) as usize)
+            let consumed = size
+                .checked_sub(valid)
+                .ok_or(DecoderError(sys::AAC_DEC_UNKNOWN))?;
+            Ok(usize::try_from(consumed).expect("u32 fits usize on supported Rust targets"))
         }
 
         pub fn decode_frame(&mut self, output: &mut [i16]) -> Result<(), DecoderError> {
@@ -424,7 +437,7 @@ mod ffi {
                 sys::aacDecoder_DecodeFrame(
                     self.handle,
                     output.as_mut_ptr(),
-                    output.len() as i32,
+                    decoder_i32_len(output.len())?,
                     flags,
                 )
             })
@@ -446,10 +459,13 @@ mod ffi {
             let mut owned = input.to_vec();
             self.fill(&mut owned)?;
             self.decode_frame(output)?;
-            let samples = self
-                .stream_info()
-                .map(|info| (info.frame_size * info.channels).max(0) as usize)
-                .unwrap_or(output.len());
+            let samples = self.stream_info().map_or(Ok(output.len()), |info| {
+                info.frame_size
+                    .checked_mul(info.channels)
+                    .filter(|samples| *samples >= 0)
+                    .and_then(|samples| usize::try_from(samples).ok())
+                    .ok_or(DecoderError(sys::AAC_DEC_UNKNOWN))
+            })?;
             Ok(samples.min(output.len()))
         }
 
@@ -492,6 +508,31 @@ mod ffi {
         }
     }
 
+    fn invalid_encoder_input() -> EncoderError {
+        EncoderError(sys::AACENC_INVALID_CONFIG)
+    }
+
+    fn encoder_i32_len(len: usize) -> Result<i32, EncoderError> {
+        i32::try_from(len).map_err(|_| invalid_encoder_input())
+    }
+
+    fn checked_encoder_count(value: i32, capacity: usize) -> Result<usize, EncoderError> {
+        let value = usize::try_from(value).map_err(|_| EncoderError(sys::AACENC_ENCODE_ERROR))?;
+        if value > capacity {
+            Err(EncoderError(sys::AACENC_ENCODE_ERROR))
+        } else {
+            Ok(value)
+        }
+    }
+
+    fn decoder_u32_len(len: usize) -> Result<u32, DecoderError> {
+        u32::try_from(len).map_err(|_| DecoderError(sys::AAC_DEC_UNSUPPORTED_FORMAT))
+    }
+
+    fn decoder_i32_len(len: usize) -> Result<i32, DecoderError> {
+        i32::try_from(len).map_err(|_| DecoderError(sys::AAC_DEC_OUTPUT_BUFFER_TOO_SMALL))
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -504,6 +545,37 @@ mod ffi {
         use crate::decoder::AacLcDecoder;
         use crate::raw::ElementId;
         use crate::section::ZERO_HCB;
+
+        #[test]
+        fn ffi_lengths_reject_values_that_do_not_fit_c_types() {
+            assert_eq!(
+                encoder_i32_len(usize::MAX),
+                Err(EncoderError(sys::AACENC_INVALID_CONFIG))
+            );
+            assert_eq!(
+                decoder_i32_len(usize::MAX),
+                Err(DecoderError(sys::AAC_DEC_OUTPUT_BUFFER_TOO_SMALL))
+            );
+            if usize::BITS > u32::BITS {
+                assert_eq!(
+                    decoder_u32_len(usize::MAX),
+                    Err(DecoderError(sys::AAC_DEC_UNSUPPORTED_FORMAT))
+                );
+            }
+        }
+
+        #[test]
+        fn ffi_counts_reject_negative_and_out_of_capacity_results() {
+            assert_eq!(
+                checked_encoder_count(-1, 32),
+                Err(EncoderError(sys::AACENC_ENCODE_ERROR))
+            );
+            assert_eq!(
+                checked_encoder_count(33, 32),
+                Err(EncoderError(sys::AACENC_ENCODE_ERROR))
+            );
+            assert_eq!(checked_encoder_count(32, 32), Ok(32));
+        }
         use crate::spectral::decode_spectral_tuple;
         use crate::transport::{DecodeFrameFlags, DecoderParameter, PureRustTransportDecoder};
 
