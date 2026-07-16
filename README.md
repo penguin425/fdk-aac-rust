@@ -85,6 +85,7 @@ history. Detailed migration status is maintained in
 | [`docs/UPSTREAM.md`](docs/UPSTREAM.md) | Upstream source and revision policy |
 | [`docs/RELEASING.md`](docs/RELEASING.md) | Versioning and automated release procedure |
 | [`docs/PORT_STATUS.md`](docs/PORT_STATUS.md) | Detailed Rust migration status |
+| [`docs/ANDROID17_XHE_ENCODER.md`](docs/ANDROID17_XHE_ENCODER.md) | Android 17 xHE-AAC encoder source and license evaluation |
 | [`tools/update-upstream.sh`](tools/update-upstream.sh) | Validated upstream revision update tool |
 
 No `.c`, `.cc`, `.cpp`, or C/C++ header is tracked. With the `ffi` feature,
