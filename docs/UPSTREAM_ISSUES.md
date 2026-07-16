@@ -40,7 +40,7 @@ affected. Each issue is assigned one of these dispositions:
 | [#85](https://github.com/mstorsjo/fdk-aac/issues/85) | Verified ([PR #14](https://github.com/penguin425/fdk-aac-rust/pull/14)) | The valid upstream LOAS fixture decodes all 159 frames when fed in 37-byte chunks with no discarded or buffered tail. The original MCP1 data has no LOAS sync layer and requires external packet boundaries. |
 | [#78](https://github.com/mstorsjo/fdk-aac/issues/78) | Already handled | ER AAC-LD is supported, while AAC-LD LTP returns the specific `LtpUnsupported` error and has mono/stereo regression coverage. |
 | [#43](https://github.com/mstorsjo/fdk-aac/issues/43) | Verified ([PR #7](https://github.com/penguin425/fdk-aac-rust/pull/7)) | Full-scale LC/HE/HEv2 tests cover the reported fixed-point boundary class. The DVD source from the historical encoder assertion is unavailable for exact replay. |
-| [#25](https://github.com/mstorsjo/fdk-aac/issues/25) | Fix + verify | Support and test HE-AACv2 output changing from provisional mono/core rate to stereo/output rate without stale stream information. |
+| [#25](https://github.com/mstorsjo/fdk-aac/issues/25) | Verified ([PR #16](https://github.com/penguin425/fdk-aac-rust/pull/16)) | A stream whose ASC does not announce PS begins with provisional mono stream information, then changes to stereo and sets the PS flag immediately after an in-band PS extension is decoded. |
 | [#16](https://github.com/mstorsjo/fdk-aac/issues/16) | Documented ([PR #8](https://github.com/penguin425/fdk-aac-rust/pull/8)) | State that raw AAC access units require external packet boundaries and one complete access unit per decode call. |
 
 ## Reviewed issues that do not currently require a codec fix
