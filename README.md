@@ -85,6 +85,7 @@ history. Detailed migration status is maintained in
 | [`docs/UPSTREAM.md`](docs/UPSTREAM.md) | Upstream source and revision policy |
 | [`docs/RELEASING.md`](docs/RELEASING.md) | Versioning and automated release procedure |
 | [`docs/PORT_STATUS.md`](docs/PORT_STATUS.md) | Detailed Rust migration status |
+| [`docs/DRC.md`](docs/DRC.md) | DRC metadata, loudness targets, and decoder controls |
 | [`tools/update-upstream.sh`](tools/update-upstream.sh) | Validated upstream revision update tool |
 
 No `.c`, `.cc`, `.cpp`, or C/C++ header is tracked. With the `ffi` feature,
