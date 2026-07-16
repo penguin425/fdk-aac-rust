@@ -13,6 +13,11 @@ identifies the upstream package as `fdk-aac` version 2.0.3. The codec originates
 from the Fraunhofer FDK AAC Codec Library for Android and implements MPEG
 Advanced Audio Coding (AAC) encoding and decoding.
 
+This repository retains the upstream Git history for provenance and
+attribution. As a result, GitHub's **Contributors** list includes authors of
+commits inherited from the original C/C++ project; inclusion there does not
+necessarily mean that an author directly contributed to this Rust port.
+
 The purpose of this repository is to port that implementation to Rust while
 continuously comparing observable behavior with a known upstream Git revision.
 It does not claim affiliation with Fraunhofer, Android, mstorsjo, MPEG, ISO, or
