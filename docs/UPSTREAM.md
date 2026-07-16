@@ -27,6 +27,13 @@ SHAs are rejected to keep results unambiguous.
 `FDK_AAC_SOURCE_DIR` takes precedence over revision selection. Unset it when
 testing `FDK_AAC_REVISION` or running the update script.
 
+The revision-based modes reset and clean their generated checkout, then verify
+that `HEAD` is exactly the pinned commit before reading or compiling it.
+`FDK_AAC_SOURCE_DIR` is different: it is an explicit trusted-local-source
+override and is never reset because the directory belongs to the caller. Do not
+set it in CI or release jobs unless that complete source tree has been verified
+independently.
+
 ## Moving to a newer revision
 
 Run:

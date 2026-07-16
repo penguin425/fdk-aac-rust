@@ -157,6 +157,13 @@ by `fdk-aac-rust` to crates.io and creates a GitHub Release containing both
 See [`docs/RELEASING.md`](docs/RELEASING.md) for the preparation and recovery
 procedure.
 
+## Security
+
+Report suspected vulnerabilities privately as described in
+[`SECURITY.md`](SECURITY.md). The latest source-level review, remediated findings,
+automated checks, and residual risks are recorded in
+[`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
+
 ## Status and compatibility
 
 The Rust migration is complete for the public decoder/encoder profiles,

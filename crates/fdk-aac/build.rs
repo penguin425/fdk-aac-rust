@@ -22,9 +22,9 @@ fn upstream_source() -> PathBuf {
     let revision = upstream_revision();
     let checkout = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR"))
         .join(format!("fdk-aac-upstream-{revision}"));
-    if !checkout.join("CMakeLists.txt").is_file() {
-        if checkout.exists() {
-            fs::remove_dir_all(&checkout).expect("remove incomplete upstream checkout");
+    if !is_real_directory(&checkout) || !is_real_directory(&checkout.join(".git")) {
+        if fs::symlink_metadata(&checkout).is_ok() {
+            remove_checkout(&checkout);
         }
         fs::create_dir_all(&checkout).expect("create upstream checkout directory");
         run(Command::new("git")
@@ -51,6 +51,37 @@ fn upstream_source() -> PathBuf {
             "FETCH_HEAD",
         ]));
     }
+    if !command_succeeds(Command::new("git").args(["-C"]).arg(&checkout).args([
+        "cat-file",
+        "-e",
+        &format!("{revision}^{{commit}}"),
+    ])) {
+        run(Command::new("git").args(["-C"]).arg(&checkout).args([
+            "fetch",
+            "--quiet",
+            "--depth=1",
+            "origin",
+            &revision,
+        ]));
+    }
+    run(Command::new("git")
+        .args(["-C"])
+        .arg(&checkout)
+        .args(["reset", "--hard", "--quiet", &revision]));
+    run(Command::new("git")
+        .args(["-C"])
+        .arg(&checkout)
+        .args(["clean", "-fdx", "--quiet"]));
+    let actual_revision = run_output(
+        Command::new("git")
+            .args(["-C"])
+            .arg(&checkout)
+            .args(["rev-parse", "HEAD"]),
+    );
+    assert_eq!(
+        actual_revision, revision,
+        "upstream checkout revision mismatch"
+    );
     require_source_tree(&checkout);
     checkout
 }
@@ -73,10 +104,40 @@ fn require_source_tree(path: &std::path::Path) {
     }
 }
 
+fn is_real_directory(path: &std::path::Path) -> bool {
+    fs::symlink_metadata(path)
+        .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+}
+
+fn remove_checkout(path: &std::path::Path) {
+    let metadata = fs::symlink_metadata(path).expect("inspect incomplete upstream checkout");
+    if metadata.is_dir() && !metadata.file_type().is_symlink() {
+        fs::remove_dir_all(path).expect("remove incomplete upstream checkout directory");
+    } else {
+        fs::remove_file(path).expect("remove incomplete upstream checkout entry");
+    }
+}
+
 fn run(command: &mut Command) {
     let display = format!("{command:?}");
     let status = command
         .status()
         .unwrap_or_else(|error| panic!("failed to run {display}: {error}"));
     assert!(status.success(), "command failed: {display}");
+}
+
+fn command_succeeds(command: &mut Command) -> bool {
+    command.status().is_ok_and(|status| status.success())
+}
+
+fn run_output(command: &mut Command) -> String {
+    let display = format!("{command:?}");
+    let output = command
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run {display}: {error}"));
+    assert!(output.status.success(), "command failed: {display}");
+    String::from_utf8(output.stdout)
+        .expect("command output is not UTF-8")
+        .trim()
+        .to_owned()
 }

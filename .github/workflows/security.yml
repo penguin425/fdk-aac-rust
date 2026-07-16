@@ -1,0 +1,56 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    env:
+      CARGO_AUDIT_VERSION: 0.22.2
+      CARGO_DENY_VERSION: 0.20.2
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_LINUX_X64_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install stable Rust
+        run: rustup update stable --no-self-update && rustup default stable
+      - name: Check lockfile and FFI boundary lints
+        run: |
+          cargo metadata --locked --format-version 1 >/dev/null
+          cargo clippy -p fdk-aac-rust --lib --features ffi --locked -- -A warnings
+      - name: Audit RustSec advisories
+        run: |
+          cargo install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked
+          cargo audit --deny warnings
+      - name: Enforce dependency policy
+        run: |
+          cargo install cargo-deny --version "$CARGO_DENY_VERSION" --locked
+          cargo deny check advisories bans sources
+      - name: Install verified Gitleaks binary
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl --fail --location --silent --show-error \
+            --output "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          printf '%s  %s\n' "$GITLEAKS_LINUX_X64_SHA256" "$archive" | sha256sum --check --strict
+          tar -xzf "$archive" gitleaks
+          install -m 0755 gitleaks /usr/local/bin/gitleaks
+      - name: Scan Git history for secrets
+        run: gitleaks git --redact --verbose
