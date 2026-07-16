@@ -2,8 +2,10 @@
 //!
 //! This small harness is primarily used by `tools/replay-issue-89-corpus.sh`.
 
+#[cfg(feature = "ffi")]
 use fdk_aac_rust::{Decoder, TransportType};
 
+#[cfg(feature = "ffi")]
 fn main() {
     let path = std::env::args()
         .nth(1)
@@ -17,4 +19,9 @@ fn main() {
             break;
         }
     }
+}
+
+#[cfg(not(feature = "ffi"))]
+fn main() {
+    eprintln!("replay_adts requires the default `ffi` feature");
 }
