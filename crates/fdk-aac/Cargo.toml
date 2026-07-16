@@ -1,0 +1,17 @@
+[package]
+name = "fdk-aac-rust"
+version.workspace = true
+edition.workspace = true
+license-file = "../../NOTICE"
+readme = "../../README.md"
+description = "Third-party Rust port of the Fraunhofer FDK AAC Codec Library for Android"
+documentation = "https://docs.rs/fdk-aac-rust"
+keywords = ["aac", "audio", "codec", "decoder", "encoder"]
+categories = ["multimedia::audio", "encoding"]
+
+[features]
+default = ["ffi"]
+ffi = ["dep:fdk-aac-sys"]
+
+[dependencies]
+fdk-aac-sys = { package = "fdk-aac-rust-sys", version = "0.1.0", path = "../fdk-aac-sys", optional = true }

@@ -1,0 +1,11 @@
+[workspace]
+members = [
+  "crates/fdk-aac-sys",
+  "crates/fdk-aac",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license-file = "NOTICE"

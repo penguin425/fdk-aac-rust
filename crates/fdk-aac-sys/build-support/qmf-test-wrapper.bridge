@@ -1,0 +1,631 @@
+#include <cstring>
+#include <vector>
+
+#include "autocorr2nd.h"
+#include "dct.h"
+#include "fft.h"
+#include "mdct.h"
+#include "qmf.h"
+#include "FDK_tools_rom.h"
+#include "pcmdmx_lib.h"
+#include "syslib_channelMapDescr.h"
+#include "libSBRdec/src/env_calc.h"
+#include "libSBRdec/src/sbrdec_freq_sca.h"
+#include "libAACdec/src/ldfiltbank.h"
+#include "libAACenc/src/metadata_compressor.h"
+#include "libAACenc/src/block_switch.h"
+#include "libAACenc/src/psy_const.h"
+#include "libAACenc/src/psy_configuration.h"
+#include "fixpoint_math.h"
+#include "aacenc_lib.h"
+
+extern "C" int fdk_ld_block_switch_test(const short *input, int frames,
+                                         int frame_length,
+                                         unsigned char *low_overlap) {
+  if (input == nullptr || low_overlap == nullptr || frames <= 0 ||
+      (frame_length != 480 && frame_length != 512))
+    return -1;
+  BLOCK_SWITCHING_CONTROL state;
+  FDKaacEnc_InitBlockSwitching(&state, 1);
+  for (int frame = 0; frame < frames; ++frame) {
+    if (FDKaacEnc_BlockSwitching(
+            &state, frame_length, 0,
+            input + static_cast<size_t>(frame) * frame_length) != 0 ||
+        FDKaacEnc_SyncBlockSwitching(&state, nullptr, 1, 1) != 0)
+      return -2;
+    low_overlap[frame] = static_cast<unsigned char>(state.windowShape == LOL_WINDOW);
+  }
+  return 0;
+}
+
+extern "C" int fdk_imlt_long_test(const int *input, const unsigned char *shape,
+                                    int frames, int frame_length, int *output) {
+  if (input == nullptr || shape == nullptr || output == nullptr || frames <= 0 ||
+      (frame_length != 480 && frame_length != 512 && frame_length != 1024))
+    return -1;
+  std::vector<FIXP_DBL> overlap(static_cast<size_t>(frame_length) * 2);
+  std::vector<FIXP_DBL> spectrum(frame_length);
+  mdct_t state;
+  mdct_init(&state, overlap.data(), static_cast<INT>(overlap.size()));
+  for (int frame = 0; frame < frames; ++frame) {
+    std::memcpy(spectrum.data(), input + static_cast<size_t>(frame) * frame_length,
+                static_cast<size_t>(frame_length) * sizeof(FIXP_DBL));
+    const int window_shape = shape[frame] ? SHAPE_LOL : SHAPE_SINE;
+    int fr = window_shape == SHAPE_LOL ? frame_length / 4 : frame_length;
+    int fl = state.prev_tl == 0 ? fr : frame_length;
+    SHORT scale[1] = {16};
+    int produced = imlt_block(
+        &state, output + static_cast<size_t>(frame) * frame_length,
+        spectrum.data(), scale, 1, frame_length, frame_length,
+        FDKgetWindowSlope(fl, window_shape), fl,
+        FDKgetWindowSlope(fr, window_shape), fr, 0, 0);
+    if (produced != frame_length) return -2;
+  }
+  return 0;
+}
+
+extern "C" int fdk_psy_configuration_test(
+    int bitrate, int sample_rate, int bandwidth, int frame_length,
+    int filterbank, int *sfb_count, int *sfb_active, int *offsets,
+    int *min_snr_q31, int *mask_low_q31, int *mask_high_q31) {
+  if (sfb_count == nullptr || sfb_active == nullptr || offsets == nullptr ||
+      min_snr_q31 == nullptr || mask_low_q31 == nullptr ||
+      mask_high_q31 == nullptr)
+    return -1;
+  PSY_CONFIGURATION config;
+  AAC_ENCODER_ERROR result = FDKaacEnc_InitPsyConfiguration(
+      bitrate, sample_rate, bandwidth, LONG_WINDOW, frame_length, 0, 0,
+      &config, static_cast<FB_TYPE>(filterbank));
+  if (result != AAC_ENC_OK) return static_cast<int>(result);
+  *sfb_count = config.sfbCnt;
+  *sfb_active = config.sfbActive;
+  for (int band = 0; band <= config.sfbCnt; ++band)
+    offsets[band] = config.sfbOffset[band];
+  for (int band = 0; band < config.sfbCnt; ++band) {
+    min_snr_q31[band] = CalcInvLdData(config.sfbMinSnrLdData[band]);
+    mask_low_q31[band] = config.sfbMaskLowFactor[band];
+    mask_high_q31[band] = config.sfbMaskHighFactor[band];
+  }
+  return 0;
+}
+
+extern "C" int fdk_aacenc_metadata_size_test() {
+  return static_cast<int>(sizeof(AACENC_MetaData));
+}
+
+extern "C" int fdk_metadata_compressor_test(
+    const short *input, int frames, int frame_length, unsigned int sample_rate,
+    int channels, int channel_mode, int drc_profile, int compression_profile,
+    int dialnorm_q16, int drc_target_q16, int compression_target_q16,
+    int *dynamic_range_q16, int *compression_q16) {
+  if (input == nullptr || dynamic_range_q16 == nullptr ||
+      compression_q16 == nullptr || frames <= 0 || frame_length <= 0 ||
+      channels <= 0 || channels > 8)
+    return -1;
+  HDRC_COMP compressor = nullptr;
+  if (FDK_DRC_Generator_Open(&compressor) != 0) return -2;
+  int result = FDK_DRC_Generator_Initialize(
+      compressor, static_cast<DRC_PROFILE>(drc_profile),
+      static_cast<DRC_PROFILE>(compression_profile), frame_length, sample_rate,
+      static_cast<CHANNEL_MODE>(channel_mode), CH_ORDER_MPEG, 1);
+  std::vector<short> planar(static_cast<size_t>(frame_length) * channels);
+  for (int frame = 0; result == 0 && frame < frames; ++frame) {
+    const short *source = input + static_cast<size_t>(frame) * frame_length * channels;
+    for (int sample = 0; sample < frame_length; ++sample) {
+      for (int channel = 0; channel < channels; ++channel) {
+        planar[static_cast<size_t>(channel) * frame_length + sample] =
+            source[static_cast<size_t>(sample) * channels + channel];
+      }
+    }
+    result = FDK_DRC_Generator_Calc(
+        compressor, planar.data(), frame_length, dialnorm_q16, drc_target_q16,
+        compression_target_q16, MAXVAL_DBL, MAXVAL_DBL, MAXVAL_DBL,
+        MAXVAL_DBL, 0, 0, 0, &dynamic_range_q16[frame],
+        &compression_q16[frame]);
+  }
+  FDK_DRC_Generator_Close(&compressor);
+  return result;
+}
+
+extern "C" int fdk_pcm_downmix_7_1_test(
+    const LONG *input, int target_channels, const unsigned char *metadata,
+    int metadata_bytes, LONG *output, int *output_channels) {
+  if (input == nullptr || output == nullptr || output_channels == nullptr ||
+      (target_channels != 1 && target_channels != 2 && target_channels != 6))
+    return -1;
+
+  HANDLE_PCM_DOWNMIX downmix = nullptr;
+  if (pcmDmx_Open(&downmix) != PCMDMX_OK) return -2;
+  int result = 0;
+  if (pcmDmx_SetParam(downmix, MAX_NUMBER_OF_OUTPUT_CHANNELS,
+                      target_channels) != PCMDMX_OK) {
+    result = -3;
+  } else if (metadata_bytes > 0 &&
+             (metadata == nullptr ||
+              pcmDmx_ReadDvbAncData(downmix,
+                                    const_cast<unsigned char *>(metadata),
+                                    metadata_bytes, 0) != PCMDMX_OK)) {
+    result = -4;
+  } else {
+    LONG buffer[8] = {};
+    std::memcpy(buffer, input, sizeof(buffer));
+    AUDIO_CHANNEL_TYPE types[8] = {
+        ACT_FRONT, ACT_FRONT, ACT_FRONT, ACT_FRONT,
+        ACT_FRONT, ACT_BACK,  ACT_BACK,  ACT_LFE};
+    unsigned char indices[8] = {0, 1, 2, 3, 4, 0, 1, 0};
+    FDK_channelMapDescr map = {};
+    FDK_chMapDescr_init(&map, nullptr, 0, 1);
+    int channels = 8;
+    PCMDMX_ERROR error = pcmDmx_ApplyFrame(
+        downmix, buffer, 8, 1, &channels, 1, types, indices, &map, nullptr);
+    if (error != PCMDMX_OK && error != PCMDMX_INVALID_MODE) {
+      result = -5 - static_cast<int>(error);
+    } else {
+      std::memcpy(output, buffer, channels * sizeof(LONG));
+      *output_channels = channels;
+    }
+  }
+  pcmDmx_Close(&downmix);
+  return result;
+}
+
+extern "C" int fdk_sbr_frequency_tables_test(
+    unsigned int sampling_rate, unsigned char start_frequency,
+    unsigned char stop_frequency, unsigned char crossover_band,
+    unsigned char frequency_scale, unsigned char alter_scale,
+    unsigned char noise_bands, unsigned char *low_bands,
+    unsigned char *high_bands, unsigned char *noise_band_count,
+    unsigned char *low_table, unsigned char *high_table) {
+  SBR_HEADER_DATA header = {};
+  header.sbrProcSmplRate = sampling_rate;
+  header.numberOfAnalysisBands = 32;
+  header.numberTimeSlots = 16;
+  header.bs_data.startFreq = start_frequency;
+  header.bs_data.stopFreq = stop_frequency;
+  header.bs_data.freqScale = frequency_scale;
+  header.bs_data.alterScale = alter_scale;
+  header.bs_data.noise_bands = noise_bands;
+  header.bs_info.xover_band = crossover_band;
+  header.freqBandData.freqBandTable[0] = header.freqBandData.freqBandTableLo;
+  header.freqBandData.freqBandTable[1] = header.freqBandData.freqBandTableHi;
+  if (resetFreqBandTables(&header, SBRDEC_ELD_GRID) != SBRDEC_OK) return -1;
+  *low_bands = header.freqBandData.nSfb[0];
+  *high_bands = header.freqBandData.nSfb[1];
+  *noise_band_count = header.freqBandData.nNfb;
+  std::memcpy(low_table, header.freqBandData.freqBandTableLo,
+              header.freqBandData.nSfb[0] + 1);
+  std::memcpy(high_table, header.freqBandData.freqBandTableHi,
+              header.freqBandData.nSfb[1] + 1);
+  return 0;
+}
+
+extern "C" int fdk_sbr_limiter_bands_test(
+    const unsigned char *low_table, unsigned char low_bands,
+    const unsigned char *source_starts, const unsigned char *target_starts,
+    const unsigned char *band_counts, unsigned char patch_count,
+    unsigned char limiter_bands, unsigned char *result_count,
+    unsigned char *result_table) {
+  if (patch_count > MAX_NUM_PATCHES) return -1;
+  PATCH_PARAM patches[MAX_NUM_PATCHES] = {};
+  for (int i = 0; i < patch_count; ++i) {
+    patches[i].sourceStartBand = source_starts[i];
+    patches[i].sourceStopBand = source_starts[i] + band_counts[i];
+    patches[i].guardStartBand = target_starts[i];
+    patches[i].targetStartBand = target_starts[i];
+    patches[i].targetBandOffs = target_starts[i] - source_starts[i];
+    patches[i].numBandsInPatch = band_counts[i];
+  }
+  return ResetLimiterBands(result_table, result_count,
+                           const_cast<unsigned char *>(low_table), low_bands,
+                           patches, patch_count, limiter_bands, 1, nullptr, 0);
+}
+
+extern "C" int fdk_sbr_autocorrelation2_test(
+    const LONG *real, const LONG *imag, int total_samples, LONG *coefficients,
+    int *det_scale) {
+  if (total_samples < 3 || total_samples > 130) return -1;
+  ACORR_COEFS ac = {};
+  int scaling = autoCorr2nd_cplx(&ac, real + 2, imag + 2, total_samples - 2);
+  coefficients[0] = ac.r11r;
+  coefficients[1] = ac.r22r;
+  coefficients[2] = ac.r12r;
+  coefficients[3] = ac.r12i;
+  coefficients[4] = ac.r01r;
+  coefficients[5] = ac.r01i;
+  coefficients[6] = ac.r02r;
+  coefficients[7] = ac.r02i;
+  coefficients[8] = ac.det;
+  *det_scale = ac.det_scale;
+  return scaling;
+}
+
+extern "C" int fdk_fixed_mul_div2_test(const int *left, const int *right,
+                                        int count, int *output) {
+  if (left == nullptr || right == nullptr || output == nullptr || count < 0)
+    return -1;
+  for (int i = 0; i < count; ++i) output[i] = fMultDiv2(left[i], right[i]);
+  return 0;
+}
+
+extern "C" int fdk_eld_filterbank_test(const LONG *spectrum, int length,
+                                        int spectrum_exp, LONG *output) {
+  if (length != 480 && length != 512) return -1;
+  FIXP_DBL data[512] = {};
+  FIXP_DBL state[1024] = {};
+  std::memcpy(data, spectrum, length * sizeof(LONG));
+  return InvMdctTransformLowDelay_fdk(data, spectrum_exp, output, state,
+                                      length);
+}
+
+extern "C" int fdk_dct_iv_test(const LONG *input, int length, LONG *output,
+                                int *scale) {
+  if (length <= 0 || length > 1024) return -1;
+  std::memcpy(output, input, length * sizeof(LONG));
+  int local_scale = 0;
+  dct_IV(output, length, &local_scale);
+  *scale = local_scale;
+  return 0;
+}
+
+extern "C" int fdk_dst_iv_test(const LONG *input, int length, LONG *output,
+                                int *scale) {
+  if (input == nullptr || output == nullptr || scale == nullptr || length < 4 ||
+      length > 1024)
+    return -1;
+  std::memcpy(output, input, length * sizeof(LONG));
+  int local_scale = 0;
+  dst_IV(output, length, &local_scale);
+  *scale = local_scale;
+  return 0;
+}
+
+extern "C" int fdk_fft32_test(const LONG *input, LONG *output, int *scale) {
+  if (input == nullptr || output == nullptr || scale == nullptr) return -1;
+  std::memcpy(output, input, 64 * sizeof(LONG));
+  int local_scale = 0;
+  fft(32, output, &local_scale);
+  *scale = local_scale;
+  return 0;
+}
+
+extern "C" int fdk_qmf_analysis32_test(const LONG *input, int samples,
+                                        LONG *real_out, LONG *imag_out,
+                                        int *lb_scale) {
+  if (samples <= 0 || (samples % 32) != 0) return -1;
+  const int slots = samples / 32;
+  QMF_FILTER_BANK bank;
+  FIXP_DBL states[10 * 32];
+  FIXP_DBL work[2 * 32];
+  std::memset(states, 0, sizeof(states));
+  if (qmfInitAnalysisFilterBank(&bank, states, slots, 32, 32, 32, 0) != 0)
+    return -2;
+  FIXP_DBL *real[32];
+  FIXP_DBL *imag[32];
+  if (slots > 32) return -3;
+  for (int slot = 0; slot < slots; ++slot) {
+    real[slot] = real_out + slot * 32;
+    imag[slot] = imag_out + slot * 32;
+  }
+  QMF_SCALE_FACTOR scale;
+  qmfAnalysisFiltering(&bank, real, imag, &scale, input, 0, 1, work);
+  if (lb_scale != nullptr) *lb_scale = scale.lb_scale;
+  return 0;
+}
+
+extern "C" int fdk_qmf_analysis_usac_test(const LONG *input, int samples,
+                                           int channels, LONG *real_out,
+                                           LONG *imag_out, int *lb_scale) {
+  if (input == nullptr || real_out == nullptr || imag_out == nullptr ||
+      (channels != 16 && channels != 24) || samples <= 0 ||
+      (samples % channels) != 0)
+    return -1;
+  const int slots = samples / channels;
+  if (slots > 32) return -3;
+  QMF_FILTER_BANK bank;
+  std::vector<FIXP_DBL> states(static_cast<size_t>(10 * channels));
+  std::vector<FIXP_DBL> work(static_cast<size_t>(2 * channels));
+  if (qmfInitAnalysisFilterBank(&bank, states.data(), slots, channels, channels,
+                                channels, 0) != 0)
+    return -2;
+  FIXP_DBL *real[32];
+  FIXP_DBL *imag[32];
+  for (int slot = 0; slot < slots; ++slot) {
+    real[slot] = real_out + slot * channels;
+    imag[slot] = imag_out + slot * channels;
+  }
+  QMF_SCALE_FACTOR scale;
+  qmfAnalysisFiltering(&bank, real, imag, &scale, input, 0, 1, work.data());
+  if (lb_scale != nullptr) *lb_scale = scale.lb_scale;
+  return 0;
+}
+
+extern "C" int fdk_qmf_analysis64_test(const LONG *input, int samples,
+                                        LONG *real_out, LONG *imag_out,
+                                        int *lb_scale) {
+  if (samples <= 0 || (samples % 64) != 0) return -1;
+  const int slots = samples / 64;
+  if (slots > 32) return -3;
+  QMF_FILTER_BANK bank;
+  FIXP_DBL states[10 * 64] = {};
+  FIXP_DBL work[2 * 64];
+  if (qmfInitAnalysisFilterBank(&bank, states, slots, 64, 64, 64, 0) != 0)
+    return -2;
+  FIXP_DBL *real[32];
+  FIXP_DBL *imag[32];
+  for (int slot = 0; slot < slots; ++slot) {
+    real[slot] = real_out + slot * 64;
+    imag[slot] = imag_out + slot * 64;
+  }
+  QMF_SCALE_FACTOR scale;
+  qmfAnalysisFiltering(&bank, real, imag, &scale, input, 0, 1, work);
+  if (lb_scale != nullptr) *lb_scale = scale.lb_scale;
+  return 0;
+}
+
+extern "C" int fdk_qmf_analysis64_cldfb_test(
+    const LONG *input, int samples, LONG *real_out, LONG *imag_out,
+    int *lb_scale) {
+  if (samples <= 0 || (samples % 64) != 0) return -1;
+  const int slots = samples / 64;
+  if (slots > 32) return -3;
+  QMF_FILTER_BANK bank;
+  FIXP_DBL states[10 * 64] = {};
+  FIXP_DBL work[2 * 64];
+  if (qmfInitAnalysisFilterBank(&bank, states, slots, 64, 64, 64,
+                                QMF_FLAG_CLDFB) != 0)
+    return -2;
+  FIXP_DBL *real[32];
+  FIXP_DBL *imag[32];
+  for (int slot = 0; slot < slots; ++slot) {
+    real[slot] = real_out + slot * 64;
+    imag[slot] = imag_out + slot * 64;
+  }
+  QMF_SCALE_FACTOR scale;
+  qmfAnalysisFiltering(&bank, real, imag, &scale, input, 0, 1, work);
+  if (lb_scale != nullptr) *lb_scale = scale.lb_scale;
+  return 0;
+}
+
+extern "C" int fdk_qmf_analysis64_cldfb_pcm_test(
+    const short *input, int samples, LONG *real_out, LONG *imag_out,
+    int *lb_scale) {
+  if (samples <= 0 || (samples % 64) != 0) return -1;
+  const int slots = samples / 64;
+  if (slots > 32) return -3;
+  QMF_FILTER_BANK bank;
+  FIXP_DBL states[10 * 64] = {};
+  FIXP_DBL work[2 * 64];
+  if (qmfInitAnalysisFilterBank(&bank, states, slots, 64, 64, 64,
+                                QMF_FLAG_CLDFB) != 0)
+    return -2;
+  FIXP_DBL *real[32];
+  FIXP_DBL *imag[32];
+  for (int slot = 0; slot < slots; ++slot) {
+    real[slot] = real_out + slot * 64;
+    imag[slot] = imag_out + slot * 64;
+  }
+  QMF_SCALE_FACTOR scale;
+  qmfAnalysisFiltering(&bank, real, imag, &scale, input, 0, 1, work);
+  if (lb_scale != nullptr) *lb_scale = scale.lb_scale;
+  return 0;
+}
+
+extern "C" int fdk_qmf_analysis32_lp_test(const LONG *input, int samples,
+                                           LONG *real_out, int *lb_scale) {
+  if (samples <= 0 || (samples % 32) != 0) return -1;
+  const int slots = samples / 32;
+  if (slots > 32) return -3;
+  QMF_FILTER_BANK bank;
+  FIXP_DBL states[10 * 32] = {};
+  FIXP_DBL work[2 * 32];
+  if (qmfInitAnalysisFilterBank(&bank, states, slots, 32, 32, 32,
+                                QMF_FLAG_LP) != 0)
+    return -2;
+  FIXP_DBL *real[32];
+  FIXP_DBL *imag[32] = {};
+  for (int slot = 0; slot < slots; ++slot) {
+    real[slot] = real_out + slot * 32;
+  }
+  QMF_SCALE_FACTOR scale;
+  qmfAnalysisFiltering(&bank, real, imag, &scale, input, 0, 1, work);
+  if (lb_scale != nullptr) *lb_scale = scale.lb_scale;
+  return 0;
+}
+
+extern "C" int fdk_qmf_analysis32_cldfb_test(
+    const LONG *input, int samples, LONG *real_out, LONG *imag_out,
+    int *lb_scale) {
+  if (samples <= 0 || (samples % 32) != 0) return -1;
+  const int slots = samples / 32;
+  if (slots > 32) return -3;
+  QMF_FILTER_BANK bank;
+  FIXP_DBL states[10 * 32] = {};
+  FIXP_DBL work[2 * 32];
+  if (qmfInitAnalysisFilterBank(&bank, states, slots, 32, 32, 32,
+                                QMF_FLAG_CLDFB) != 0)
+    return -2;
+  FIXP_DBL *real[32];
+  FIXP_DBL *imag[32];
+  for (int slot = 0; slot < slots; ++slot) {
+    real[slot] = real_out + slot * 32;
+    imag[slot] = imag_out + slot * 32;
+  }
+  QMF_SCALE_FACTOR scale;
+  qmfAnalysisFiltering(&bank, real, imag, &scale, input, 0, 1, work);
+  if (lb_scale != nullptr) *lb_scale = scale.lb_scale;
+  return 0;
+}
+
+extern "C" int fdk_qmf_analysis32_cldfb_lp_test(
+    const LONG *input, int samples, LONG *real_out, int *lb_scale) {
+  if (samples <= 0 || (samples % 32) != 0) return -1;
+  const int slots = samples / 32;
+  if (slots > 32) return -3;
+  QMF_FILTER_BANK bank;
+  FIXP_DBL states[10 * 32] = {};
+  FIXP_DBL work[2 * 32];
+  if (qmfInitAnalysisFilterBank(&bank, states, slots, 32, 32, 32,
+                                QMF_FLAG_CLDFB | QMF_FLAG_LP) != 0)
+    return -2;
+  FIXP_DBL *real[32];
+  FIXP_DBL *imag[32] = {};
+  for (int slot = 0; slot < slots; ++slot) {
+    real[slot] = real_out + slot * 32;
+  }
+  QMF_SCALE_FACTOR scale;
+  qmfAnalysisFiltering(&bank, real, imag, &scale, input, 0, 1, work);
+  if (lb_scale != nullptr) *lb_scale = scale.lb_scale;
+  return 0;
+}
+
+extern "C" int fdk_qmf_synthesis64_test(const LONG *real_in,
+                                         const LONG *imag_in, int slots,
+                                         LONG *output) {
+  if (slots <= 0 || slots > 32) return -1;
+  QMF_FILTER_BANK bank;
+  FIXP_DBL states[9 * 64];
+  FIXP_DBL work[2 * 64];
+  std::memset(states, 0, sizeof(states));
+  if (qmfInitSynthesisFilterBank(&bank, states, slots, 32, 64, 64, 0) != 0)
+    return -2;
+  for (int slot = 0; slot < slots; ++slot) {
+    qmfSynthesisFilteringSlot(&bank, real_in + slot * 64,
+                              imag_in + slot * 64, 0, 0,
+                              output + slot * 64, 1, work);
+  }
+  return 0;
+}
+
+extern "C" int fdk_qmf_synthesis64_lp_test(const LONG *real_in, int slots,
+                                            LONG *output) {
+  if (slots <= 0 || slots > 32) return -1;
+  QMF_FILTER_BANK bank;
+  FIXP_DBL states[9 * 64] = {};
+  FIXP_DBL work[2 * 64];
+  if (qmfInitSynthesisFilterBank(&bank, states, slots, 32, 64, 64,
+                                 QMF_FLAG_LP) != 0)
+    return -2;
+  for (int slot = 0; slot < slots; ++slot) {
+    qmfSynthesisFilteringSlot(&bank, real_in + slot * 64, nullptr, 0, 0,
+                              output + slot * 64, 1, work);
+  }
+  return 0;
+}
+
+extern "C" int fdk_qmf_synthesis32_cldfb_test(
+    const LONG *real_in, const LONG *imag_in, int slots, LONG *output) {
+  if (slots <= 0 || slots > 32) return -1;
+  QMF_FILTER_BANK bank;
+  FIXP_DBL states[9 * 32] = {};
+  FIXP_DBL work[2 * 32];
+  if (qmfInitSynthesisFilterBank(&bank, states, slots, 32, 32, 32,
+                                 QMF_FLAG_CLDFB) != 0)
+    return -2;
+  for (int slot = 0; slot < slots; ++slot) {
+    qmfSynthesisFilteringSlot(&bank, real_in + slot * 32,
+                              imag_in + slot * 32, 0, 0,
+                              output + slot * 32, 1, work);
+  }
+  return 0;
+}
+
+extern "C" int fdk_qmf_synthesis32_cldfb_lp_test(
+    const LONG *real_in, int slots, LONG *output) {
+  if (slots <= 0 || slots > 32) return -1;
+  QMF_FILTER_BANK bank;
+  FIXP_DBL states[9 * 32] = {};
+  FIXP_DBL work[2 * 32];
+  if (qmfInitSynthesisFilterBank(&bank, states, slots, 32, 32, 32,
+                                 QMF_FLAG_CLDFB | QMF_FLAG_LP) != 0)
+    return -2;
+  for (int slot = 0; slot < slots; ++slot) {
+    qmfSynthesisFilteringSlot(&bank, real_in + slot * 32, nullptr, 0, 0,
+                              output + slot * 32, 1, work);
+  }
+  return 0;
+}
+
+extern "C" int fdk_qmf_synthesis64_cldfb_test(
+    const LONG *real_in, const LONG *imag_in, int slots, LONG *output) {
+  if (slots <= 0 || slots > 32) return -1;
+  QMF_FILTER_BANK bank;
+  FIXP_DBL states[9 * 64] = {};
+  FIXP_DBL work[2 * 64];
+  if (qmfInitSynthesisFilterBank(&bank, states, slots, 32, 64, 64,
+                                 QMF_FLAG_CLDFB) != 0)
+    return -2;
+  for (int slot = 0; slot < slots; ++slot) {
+    qmfSynthesisFilteringSlot(&bank, real_in + slot * 64,
+                              imag_in + slot * 64, 0, 0,
+                              output + slot * 64, 1, work);
+  }
+  return 0;
+}
+
+extern "C" int fdk_qmf_roundtrip32_64_test(const LONG *input, int samples,
+                                            LONG *output) {
+  if (samples <= 0 || samples % 32 != 0 || samples / 32 > 32) return -1;
+  const int slots = samples / 32;
+  QMF_FILTER_BANK analysis;
+  QMF_FILTER_BANK synthesis;
+  FIXP_DBL analysis_states[10 * 32] = {};
+  FIXP_DBL synthesis_states[9 * 64] = {};
+  FIXP_DBL analysis_work[2 * 32];
+  FIXP_DBL synthesis_work[2 * 64];
+  FIXP_DBL real_data[32][64] = {};
+  FIXP_DBL imag_data[32][64] = {};
+  FIXP_DBL *real[32];
+  FIXP_DBL *imag[32];
+  for (int slot = 0; slot < slots; ++slot) {
+    real[slot] = real_data[slot];
+    imag[slot] = imag_data[slot];
+  }
+  if (qmfInitAnalysisFilterBank(&analysis, analysis_states, slots, 32, 32, 32,
+                                0) != 0)
+    return -2;
+  if (qmfInitSynthesisFilterBank(&synthesis, synthesis_states, slots, 32, 32,
+                                 64, 0) != 0)
+    return -3;
+  QMF_SCALE_FACTOR scale;
+  qmfAnalysisFiltering(&analysis, real, imag, &scale, input, 0, 1,
+                       analysis_work);
+  for (int slot = 0; slot < slots; ++slot) {
+    qmfSynthesisFilteringSlot(&synthesis, real[slot], imag[slot],
+                              scale.lb_scale, scale.lb_scale,
+                              output + slot * 64, 1, synthesis_work);
+  }
+  return 0;
+}
+
+extern "C" int fdk_qmf_roundtrip32_cldfb_test(const LONG *input, int samples,
+                                                LONG *output) {
+  if (samples <= 0 || samples % 32 != 0 || samples / 32 > 32) return -1;
+  const int slots = samples / 32;
+  QMF_FILTER_BANK analysis;
+  QMF_FILTER_BANK synthesis;
+  FIXP_DBL analysis_states[10 * 32] = {};
+  FIXP_DBL synthesis_states[9 * 32] = {};
+  FIXP_DBL analysis_work[2 * 32];
+  FIXP_DBL synthesis_work[2 * 32];
+  FIXP_DBL real_data[32][64] = {};
+  FIXP_DBL imag_data[32][64] = {};
+  FIXP_DBL *real[32];
+  FIXP_DBL *imag[32];
+  for (int slot = 0; slot < slots; ++slot) {
+    real[slot] = real_data[slot];
+    imag[slot] = imag_data[slot];
+  }
+  if (qmfInitAnalysisFilterBank(&analysis, analysis_states, slots, 32, 32, 32,
+                                QMF_FLAG_CLDFB) != 0)
+    return -2;
+  if (qmfInitSynthesisFilterBank(&synthesis, synthesis_states, slots, 32, 32,
+                                 32, QMF_FLAG_CLDFB) != 0)
+    return -3;
+  QMF_SCALE_FACTOR scale;
+  qmfAnalysisFiltering(&analysis, real, imag, &scale, input, 0, 1,
+                       analysis_work);
+  qmfChangeOutScalefactor(&synthesis, -8);
+  qmfSynthesisFiltering(&synthesis, real, imag, &scale, 0, output, 1,
+                        synthesis_work);
+  return 0;
+}

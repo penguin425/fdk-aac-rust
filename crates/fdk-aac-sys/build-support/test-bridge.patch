@@ -1,0 +1,1452 @@
+diff --git a/libAACenc/src/adj_thr.cpp b/libAACenc/src/adj_thr.cpp
+index 239abd0..e168b3b 100644
+--- a/libAACenc/src/adj_thr.cpp
++++ b/libAACenc/src/adj_thr.cpp
+@@ -2912,3 +2912,163 @@ void FDKaacEnc_AdjThrClose(ADJ_THR_STATE **phAdjThr) {
+     FreeRam_aacEnc_AdjustThreshold(phAdjThr);
+   }
+ }
++
++#ifdef FDK_RUST_TEST_BRIDGE
++extern "C" int fdk_reduce_thresholds_vbr_test(
++    const int *energy_q31, const int *energy_ld64,
++    const int *threshold_ld64, const int *minimum_snr_ld64,
++    const int *form_factor_ld64, const int *sfb_offsets,
++    const unsigned char *avoid_hole, int sfb_count, int quality_factor_q31,
++    int *chaos_measure_q31, int *instant_chaos_measure_q31,
++    int *reduced_threshold_ld64,
++    unsigned char *reduced_avoid_hole) {
++  if (energy_q31 == NULL || energy_ld64 == NULL || threshold_ld64 == NULL ||
++      minimum_snr_ld64 == NULL || form_factor_ld64 == NULL ||
++      sfb_offsets == NULL || avoid_hole == NULL || chaos_measure_q31 == NULL ||
++      instant_chaos_measure_q31 == NULL ||
++      reduced_threshold_ld64 == NULL || reduced_avoid_hole == NULL ||
++      sfb_count <= 0 || sfb_count > MAX_GROUPED_SFB) {
++    return -1;
++  }
++
++  QC_OUT_CHANNEL qc = {};
++  PSY_OUT_CHANNEL psy = {};
++  UCHAR ahFlag[2][MAX_GROUPED_SFB] = {};
++  FIXP_DBL thrExp[2][MAX_GROUPED_SFB] = {};
++  QC_OUT_CHANNEL *qcChannels[2] = {&qc, NULL};
++  const PSY_OUT_CHANNEL *psyChannels[2] = {&psy, NULL};
++  psy.sfbCnt = sfb_count;
++  psy.sfbPerGroup = sfb_count;
++  psy.maxSfbPerGroup = sfb_count;
++  psy.lastWindowSequence = LONG_WINDOW;
++  psy.sfbEnergy = qc.sfbEnergy;
++  psy.sfbEnergyLdData = qc.sfbEnergyLdData;
++  psy.sfbThresholdLdData = qc.sfbThresholdLdData;
++
++  for (int sfb = 0; sfb < sfb_count; ++sfb) {
++    qc.sfbEnergy[sfb] = (FIXP_DBL)energy_q31[sfb];
++    qc.sfbEnergyLdData[sfb] = (FIXP_DBL)energy_ld64[sfb];
++    qc.sfbWeightedEnergyLdData[sfb] = (FIXP_DBL)energy_ld64[sfb];
++    qc.sfbThresholdLdData[sfb] = (FIXP_DBL)threshold_ld64[sfb];
++    qc.sfbMinSnrLdData[sfb] = (FIXP_DBL)minimum_snr_ld64[sfb];
++    qc.sfbFormFactorLdData[sfb] = (FIXP_DBL)form_factor_ld64[sfb];
++    psy.sfbOffsets[sfb] = sfb_offsets[sfb];
++    ahFlag[0][sfb] = avoid_hole[sfb];
++  }
++  psy.sfbOffsets[sfb_count] = sfb_offsets[sfb_count];
++
++  *instant_chaos_measure_q31 =
++      FDKaacEnc_calcChaosMeasure(&psy, qc.sfbFormFactorLdData);
++  FIXP_DBL chaosMeasure = (FIXP_DBL)*chaos_measure_q31;
++  FDKaacEnc_calcThreshExp(thrExp, qcChannels, psyChannels, 1);
++  FDKaacEnc_reduceThresholdsVBR(qcChannels, psyChannels, ahFlag, thrExp, 1,
++                                (FIXP_DBL)quality_factor_q31,
++                                &chaosMeasure);
++  *chaos_measure_q31 = chaosMeasure;
++  for (int sfb = 0; sfb < sfb_count; ++sfb) {
++    reduced_threshold_ld64[sfb] = qc.sfbThresholdLdData[sfb];
++    reduced_avoid_hole[sfb] = ahFlag[0][sfb];
++  }
++  return 0;
++}
++
++extern "C" int fdk_reduce_thresholds_cbr_test(
++    const int *energy_ld64, const int *threshold_ld64,
++    const int *minimum_snr_ld64, const unsigned char *avoid_hole,
++    int sfb_count, int reduction_mantissa_q31, int reduction_exponent,
++    int *reduced_threshold_ld64, unsigned char *reduced_avoid_hole) {
++  if (energy_ld64 == NULL || threshold_ld64 == NULL ||
++      minimum_snr_ld64 == NULL || avoid_hole == NULL ||
++      reduced_threshold_ld64 == NULL || reduced_avoid_hole == NULL ||
++      sfb_count <= 0 || sfb_count > MAX_GROUPED_SFB) {
++    return -1;
++  }
++
++  QC_OUT_CHANNEL qc = {};
++  PSY_OUT_CHANNEL psy = {};
++  UCHAR ahFlag[2][MAX_GROUPED_SFB] = {};
++  FIXP_DBL thrExp[2][MAX_GROUPED_SFB] = {};
++  QC_OUT_CHANNEL *qcChannels[2] = {&qc, NULL};
++  const PSY_OUT_CHANNEL *psyChannels[2] = {&psy, NULL};
++
++  psy.sfbCnt = sfb_count;
++  psy.sfbPerGroup = sfb_count;
++  psy.maxSfbPerGroup = sfb_count;
++  psy.sfbThresholdLdData = qc.sfbThresholdLdData;
++  for (int sfb = 0; sfb < sfb_count; ++sfb) {
++    qc.sfbWeightedEnergyLdData[sfb] = (FIXP_DBL)energy_ld64[sfb];
++    qc.sfbThresholdLdData[sfb] = (FIXP_DBL)threshold_ld64[sfb];
++    qc.sfbMinSnrLdData[sfb] = (FIXP_DBL)minimum_snr_ld64[sfb];
++    ahFlag[0][sfb] = avoid_hole[sfb];
++  }
++
++  FDKaacEnc_calcThreshExp(thrExp, qcChannels, psyChannels, 1);
++  FDKaacEnc_reduceThresholdsCBR(
++      qcChannels, psyChannels, ahFlag, thrExp, 1,
++      (FIXP_DBL)reduction_mantissa_q31, (SCHAR)reduction_exponent);
++
++  for (int sfb = 0; sfb < sfb_count; ++sfb) {
++    reduced_threshold_ld64[sfb] = qc.sfbThresholdLdData[sfb];
++    reduced_avoid_hole[sfb] = ahFlag[0][sfb];
++  }
++  return 0;
++}
++
++extern "C" int fdk_adjust_pe_min_max_test(const int *current_pe, int frames,
++                                            int initial_mean_pe,
++                                            int *minimum_pe,
++                                            int *maximum_pe) {
++  if (current_pe == NULL || minimum_pe == NULL || maximum_pe == NULL ||
++      frames < 0 || initial_mean_pe < 0) {
++    return -1;
++  }
++  int peMin = fMultI(FL2FXCONST_DBL(0.8f), initial_mean_pe);
++  int peMax = fMultI(FL2FXCONST_DBL(0.6f), initial_mean_pe) << 1;
++  for (int frame = 0; frame < frames; frame++) {
++    FDKaacEnc_adjustPeMinMax(current_pe[frame], &peMin, &peMax);
++    minimum_pe[frame] = peMin;
++    maximum_pe[frame] = peMax;
++  }
++  return 0;
++}
++
++extern "C" int fdk_bitres_factor_test(const int *current_pe,
++                                        const int *reservoir_bits, int frames,
++                                        int average_dynamic_bits,
++                                        int maximum_reservoir_bits,
++                                        int *factor_q16) {
++  if (current_pe == NULL || reservoir_bits == NULL || factor_q16 == NULL ||
++      frames < 0 || average_dynamic_bits <= 0 || maximum_reservoir_bits < 0) {
++    return -1;
++  }
++  ADJ_THR_STATE state = {};
++  ATS_ELEMENT element = {};
++  state.bresParamLong.clipSaveLow = FL2FXCONST_DBL(0.2f);
++  state.bresParamLong.clipSaveHigh = FL2FXCONST_DBL(0.95f);
++  state.bresParamLong.minBitSave = FL2FXCONST_DBL(-0.05f);
++  state.bresParamLong.maxBitSave = FL2FXCONST_DBL(0.3f);
++  state.bresParamLong.clipSpendLow = FL2FXCONST_DBL(0.2f);
++  state.bresParamLong.clipSpendHigh = FL2FXCONST_DBL(0.95f);
++  state.bresParamLong.minBitSpend = FL2FXCONST_DBL(-0.10f);
++  state.bresParamLong.maxBitSpend = FL2FXCONST_DBL(0.4f);
++  element.peMin = fMultI(FL2FXCONST_DBL(0.8f), average_dynamic_bits);
++  element.peMax = fMultI(FL2FXCONST_DBL(0.6f), average_dynamic_bits) << 1;
++
++  for (int frame = 0; frame < frames; frame++) {
++    FIXP_DBL factor;
++    INT exponent;
++    FDKaacEnc_bitresCalcBitFac(
++        reservoir_bits[frame], maximum_reservoir_bits, current_pe[frame],
++        LONG_WINDOW, average_dynamic_bits, MAXVAL_DBL, &state, &element,
++        &factor, &exponent);
++    INT64 scaled = factor;
++    if (exponent >= 0) {
++      scaled <<= exponent;
++    } else {
++      scaled >>= -exponent;
++    }
++    factor_q16[frame] = (INT)((scaled + (1 << 14)) >> 15);
++  }
++  return 0;
++}
++#endif
+diff --git a/libAACenc/src/mps_main.cpp b/libAACenc/src/mps_main.cpp
+index 1048228..5124264 100644
+--- a/libAACenc/src/mps_main.cpp
++++ b/libAACenc/src/mps_main.cpp
+@@ -516,6 +516,105 @@ INT FDK_MpegsEnc_GetDecDelay(HANDLE_MPS_ENCODER hMpsEnc) {
+   return delay;
+ }
+ 
++#ifdef FDK_RUST_TEST_BRIDGE
++extern "C" INT fdk_mps_encode_frame_test(
++    const UINT samplingRate, const UINT frameLength, const INT_PCM *left,
++    const INT_PCM *right, UCHAR *payload, const UINT payloadCapacity,
++    UINT *payloadBits, INT_PCM *downmix) {
++  HANDLE_MPS_ENCODER encoder = NULL;
++  AACENC_EXT_PAYLOAD extension = {0};
++  INT_PCM audio[2048];
++  INT result = -1;
++
++  if (left == NULL || right == NULL || payload == NULL || payloadBits == NULL ||
++      downmix == NULL || frameLength == 0 || frameLength > 1024) {
++    return -1;
++  }
++  const INT bitrate = FDK_MpegsEnc_GetClosestBitRate(
++      AOT_ER_AAC_ELD, MODE_212, samplingRate, 0, 64000);
++  if (bitrate < 0 || FDK_MpegsEnc_Open(&encoder) != MPS_ENCODER_OK) {
++    return -2;
++  }
++  if (FDK_MpegsEnc_Init(encoder, AOT_ER_AAC_ELD, samplingRate, bitrate, 0,
++                        frameLength, frameLength,
++                        frameLength / 2) != MPS_ENCODER_OK) {
++    result = -3;
++    goto bail;
++  }
++
++  FDKmemcpy(audio, left, frameLength * sizeof(INT_PCM));
++  FDKmemcpy(audio + frameLength, right, frameLength * sizeof(INT_PCM));
++  if (FDK_MpegsEnc_Process(encoder, audio, 2 * frameLength, &extension) !=
++      MPS_ENCODER_OK) {
++    result = -4;
++    goto bail;
++  }
++  if (((extension.dataSize + 7) >> 3) > payloadCapacity) {
++    result = -5;
++    goto bail;
++  }
++  /* The first nibble in pData is the AAC EXT_LDSAC_DATA framing marker.
++     dataSize describes the following byte-aligned SpatialFrame. */
++  FDKmemcpy(payload, extension.pData + 1, (extension.dataSize + 7) >> 3);
++  FDKmemcpy(downmix, audio, frameLength * sizeof(INT_PCM));
++  *payloadBits = extension.dataSize;
++  result = 0;
++
++bail:
++  FDK_MpegsEnc_Close(&encoder);
++  return result;
++}
++
++extern "C" INT fdk_mps_encode_two_frames_test(
++    const UINT samplingRate, const UINT frameLength, const INT_PCM *left,
++    const INT_PCM *right, UCHAR *payload, const UINT payloadStride,
++    UINT *payloadBits) {
++  HANDLE_MPS_ENCODER encoder = NULL;
++  AACENC_EXT_PAYLOAD extension = {0};
++  INT_PCM audio[2048];
++  INT result = -1;
++
++  if (left == NULL || right == NULL || payload == NULL || payloadBits == NULL ||
++      frameLength == 0 || frameLength > 1024 || payloadStride == 0) {
++    return -1;
++  }
++  const INT bitrate = FDK_MpegsEnc_GetClosestBitRate(
++      AOT_ER_AAC_ELD, MODE_212, samplingRate, 0, 64000);
++  if (bitrate < 0 || FDK_MpegsEnc_Open(&encoder) != MPS_ENCODER_OK) {
++    return -2;
++  }
++  if (FDK_MpegsEnc_Init(encoder, AOT_ER_AAC_ELD, samplingRate, bitrate, 0,
++                        frameLength, frameLength,
++                        frameLength / 2) != MPS_ENCODER_OK) {
++    result = -3;
++    goto bail_two;
++  }
++  for (UINT frame = 0; frame < 2; frame++) {
++    FDKmemcpy(audio, left + frame * frameLength,
++              frameLength * sizeof(INT_PCM));
++    FDKmemcpy(audio + frameLength, right + frame * frameLength,
++              frameLength * sizeof(INT_PCM));
++    if (FDK_MpegsEnc_Process(encoder, audio, 2 * frameLength, &extension) !=
++        MPS_ENCODER_OK) {
++      result = -4;
++      goto bail_two;
++    }
++    if (((extension.dataSize + 7) >> 3) > payloadStride) {
++      result = -5;
++      goto bail_two;
++    }
++    FDKmemcpy(payload + frame * payloadStride, extension.pData + 1,
++              (extension.dataSize + 7) >> 3);
++    payloadBits[frame] = extension.dataSize;
++  }
++  result = 0;
++
++bail_two:
++  FDK_MpegsEnc_Close(&encoder);
++  return result;
++}
++#endif
++
+ MPS_ENCODER_ERROR FDK_MpegsEnc_GetLibInfo(LIB_INFO *info) {
+   MPS_ENCODER_ERROR error = MPS_ENCODER_OK;
+ 
+diff --git a/libFDK/src/fft.cpp b/libFDK/src/fft.cpp
+index c9ee784..b5fad0e 100644
+--- a/libFDK/src/fft.cpp
++++ b/libFDK/src/fft.cpp
+@@ -103,6 +103,22 @@ amm-info@iis.fraunhofer.de
+ #include "fft_rad2.h"
+ #include "FDK_tools_rom.h"
+ 
++/* The bridge is exercised from Rust's parallel test runner while production
++   encoder calls may execute FFTs on other worker threads.  Keep probe state
++   local to the calling thread so unrelated transforms cannot overwrite it. */
++static thread_local int fdk_fft32_capture_enabled = 0;
++static thread_local FIXP_DBL fdk_fft32_capture[3][64];
++
++extern "C" void fdk_fft32_capture_enable(int enabled) {
++  fdk_fft32_capture_enabled = enabled;
++}
++
++extern "C" int fdk_fft32_capture_get(int stage, FIXP_DBL *output) {
++  if (stage < 0 || stage >= 3 || output == NULL) return -1;
++  for (int i = 0; i < 64; ++i) output[i] = fdk_fft32_capture[stage][i];
++  return 0;
++}
++
+ #define W_PiFOURTH STC(0x5a82799a)
+ //#define W_PiFOURTH ((FIXP_DBL)(0x5a82799a))
+ #ifndef SUMDIFF_PIFOURTH
+@@ -1206,6 +1222,10 @@ inline void fft_32(FIXP_DBL *const _x) {
+     x[63] = vi3 + ur4; /* Im D'= Re C - Re D + Im A - Im B */
+   }
+ 
++  if (fdk_fft32_capture_enabled) {
++    for (int i = 0; i < 64; ++i) fdk_fft32_capture[0][i] = _x[i];
++  }
++
+   {
+     FIXP_DBL *xt = _x;
+ 
+@@ -1251,6 +1271,11 @@ inline void fft_32(FIXP_DBL *const _x) {
+     } while (--j != 0);
+   }
+ 
++
++  if (fdk_fft32_capture_enabled) {
++    for (int i = 0; i < 64; ++i) fdk_fft32_capture[1][i] = _x[i];
++  }
++
+   {
+     FIXP_DBL *const x = _x;
+     FIXP_DBL vi, ui, vr, ur;
+@@ -1519,6 +1544,9 @@ inline void fft_32(FIXP_DBL *const _x) {
+     x[62] = (ur >> 1) - vr;
+     x[63] = (ui >> 1) + vi;
+   }
++  if (fdk_fft32_capture_enabled) {
++    for (int i = 0; i < 64; ++i) fdk_fft32_capture[2][i] = _x[i];
++  }
+ }
+ #endif /* #ifndef FUNCTION_fft_32 */
+ 
+diff --git a/libFDK/src/fixpoint_math.cpp b/libFDK/src/fixpoint_math.cpp
+index 1e26420..90c3a25 100644
+--- a/libFDK/src/fixpoint_math.cpp
++++ b/libFDK/src/fixpoint_math.cpp
+@@ -391,6 +391,18 @@ FIXP_DBL CalcLdInt(INT i) {
+ }
+ #endif /* (LD_INT_TAB_LEN!=0)  */
+ 
++#ifdef FDK_RUST_TEST_BRIDGE
++extern "C" int fdk_log2_coefficients_test(int *coefficients, int count,
++                                           int *conversion) {
++  if (coefficients == NULL || count < MAX_LD_PRECISION || conversion == NULL)
++    return -1;
++  for (int i = 0; i < MAX_LD_PRECISION; i++) coefficients[i] = ldCoeff[i];
++  *conversion = FL2FXCONST_DBL(
++      2.0 * 0.4426950408889634073599246810019);
++  return 0;
++}
++#endif
++
+ #if !defined(FUNCTION_schur_div)
+ /*****************************************************************************
+ 
+diff --git a/libSACenc/src/sacenc_bitstream.cpp b/libSACenc/src/sacenc_bitstream.cpp
+index dacfc27..2b31210 100644
+--- a/libSACenc/src/sacenc_bitstream.cpp
++++ b/libSACenc/src/sacenc_bitstream.cpp
+@@ -116,6 +116,18 @@ amm-info@iis.fraunhofer.de
+ #define MAX_SAMPLING_FREQUENCY_INDEX 13
+ #define SAMPLING_FREQUENCY_INDEX_ESCAPE 15
+ 
++#ifdef FDK_RUST_TEST_BRIDGE
++static SCHAR fdkRustLastCld[15];
++static SCHAR fdkRustLastIcc[15];
++extern "C" INT fdk_mps_last_parameters_test(SCHAR *cld, SCHAR *icc,
++                                             UINT capacity) {
++  if (cld == NULL || icc == NULL || capacity < 15) return -1;
++  FDKmemcpy(cld, fdkRustLastCld, 15 * sizeof(SCHAR));
++  FDKmemcpy(icc, fdkRustLastIcc, 15 * sizeof(SCHAR));
++  return 15;
++}
++#endif
++
+ /* Data Types ****************************************************************/
+ typedef struct {
+   SCHAR cld_old[SACENC_MAX_NUM_BOXES][MAX_NUM_BINS];
+@@ -690,6 +702,12 @@ static FDK_SACENC_ERROR writeOttData(
+       (pICCLosslessData == NULL)) {
+     error = SACENC_INVALID_HANDLE;
+   } else {
++#ifdef FDK_RUST_TEST_BRIDGE
++    if (numOttBoxes > 0 && numParamSets > 0 && numBands >= 15) {
++      FDKmemcpy(fdkRustLastCld, pOttData->cld[0][0], 15 * sizeof(SCHAR));
++      FDKmemcpy(fdkRustLastIcc, pOttData->icc[0][0], 15 * sizeof(SCHAR));
++    }
++#endif
+     int i;
+     for (i = 0; i < numOttBoxes; i++) {
+       ecData(hBitstream, pOttData->cld[i], pPrevOttData->cld_old[i],
+diff --git a/libSBRdec/src/env_calc.cpp b/libSBRdec/src/env_calc.cpp
+index cefa612..f649385 100644
+--- a/libSBRdec/src/env_calc.cpp
++++ b/libSBRdec/src/env_calc.cpp
+@@ -3200,3 +3200,115 @@ ResetLimiterBands(
+ 
+   return SBRDEC_OK;
+ }
++
++#ifdef FDK_RUST_TEST_BRIDGE
++extern "C" int fdk_sbr_component_energies_test(
++    LONG reference_m, signed char reference_e, LONG estimated_m,
++    signed char estimated_e, LONG noise_m, signed char noise_e,
++    unsigned char sine_present, unsigned char sine_mapped,
++    int no_noise, LONG *gain_m, signed char *gain_e, LONG *noise_level_m,
++    signed char *noise_level_e, LONG *sine_m, signed char *sine_e) {
++  ENV_CALC_NRGS nrgs = {};
++  nrgs.nrgEst[0] = estimated_m;
++  nrgs.nrgEst_e[0] = estimated_e;
++  calcSubbandGain(reference_m, reference_e, &nrgs, 0, noise_m, noise_e,
++                  sine_present, sine_mapped, no_noise);
++  *gain_m = nrgs.nrgGain[0];
++  *gain_e = nrgs.nrgGain_e[0];
++  *noise_level_m = nrgs.noiseLevel[0];
++  *noise_level_e = nrgs.noiseLevel_e[0];
++  *sine_m = nrgs.nrgSine[0];
++  *sine_e = nrgs.nrgSine_e[0];
++  return 0;
++}
++
++extern "C" int fdk_sbr_limited_components_test(
++    const LONG *reference_m, const signed char *reference_e,
++    const LONG *estimated_m, const signed char *estimated_e,
++    const LONG *noise_m, const signed char *noise_e,
++    const unsigned char *sine_present, const unsigned char *sine_mapped,
++    int count, unsigned char limiter_gains, int no_noise,
++    LONG *gain_m, signed char *gain_e, LONG *noise_level_m,
++    signed char *noise_level_e, LONG *sine_m, signed char *sine_e) {
++  if (count <= 0 || count > 64 || limiter_gains > 3) return -1;
++  ENV_CALC_NRGS nrgs = {};
++  for (int k = 0; k < count; ++k) {
++    nrgs.nrgRef[k] = reference_m[k];
++    nrgs.nrgRef_e[k] = reference_e[k];
++    nrgs.nrgEst[k] = estimated_m[k];
++    nrgs.nrgEst_e[k] = estimated_e[k];
++    calcSubbandGain(reference_m[k], reference_e[k], &nrgs, k, noise_m[k],
++                    noise_e[k], sine_present[k], sine_mapped[k], no_noise);
++  }
++
++  FIXP_DBL sumRef, maxGain;
++  SCHAR sumRef_e, maxGain_e;
++  calcAvgGain(&nrgs, 0, count, &sumRef, &sumRef_e, &maxGain, &maxGain_e);
++  maxGain = fMult(maxGain,
++                  FDK_sbrDecoder_sbr_limGains_m[limiter_gains]);
++  int combined_e =
++      maxGain_e + FDK_sbrDecoder_sbr_limGains_e[limiter_gains];
++  maxGain_e = (combined_e > 127) ? (SCHAR)127 : (SCHAR)combined_e;
++  if (maxGain == FL2FXCONST_DBL(0.0f)) {
++    maxGain_e = -FRACT_BITS;
++  } else {
++    SCHAR shift = CountLeadingBits(maxGain);
++    maxGain_e -= shift;
++    maxGain <<= (int)shift;
++  }
++
++  for (int k = 0; k < count; ++k) {
++    if (nrgs.nrgGain_e[k] > maxGain_e ||
++        (nrgs.nrgGain_e[k] == maxGain_e && nrgs.nrgGain[k] > maxGain)) {
++      FIXP_DBL ratio;
++      SCHAR ratio_e;
++      FDK_divide_MantExp(maxGain, maxGain_e, nrgs.nrgGain[k],
++                         nrgs.nrgGain_e[k], &ratio, &ratio_e);
++      nrgs.noiseLevel[k] = fMult(nrgs.noiseLevel[k], ratio);
++      nrgs.noiseLevel_e[k] += ratio_e;
++      nrgs.nrgGain[k] = maxGain;
++      nrgs.nrgGain_e[k] = maxGain_e;
++    }
++  }
++
++  FIXP_DBL accu = FL2FXCONST_DBL(0.0f);
++  SCHAR accu_e = 0;
++  for (int k = 0; k < count; ++k) {
++    FIXP_DBL tmp = fMult(nrgs.nrgGain[k], nrgs.nrgEst[k]);
++    SCHAR tmp_e = nrgs.nrgGain_e[k] + nrgs.nrgEst_e[k];
++    FDK_add_MantExp(tmp, tmp_e, accu, accu_e, &accu, &accu_e);
++    if (nrgs.nrgSine[k] != FL2FXCONST_DBL(0.0f)) {
++      FDK_add_MantExp(nrgs.nrgSine[k], nrgs.nrgSine_e[k], accu, accu_e,
++                      &accu, &accu_e);
++    } else if (no_noise == 0) {
++      FDK_add_MantExp(nrgs.noiseLevel[k], nrgs.noiseLevel_e[k], accu, accu_e,
++                      &accu, &accu_e);
++    }
++  }
++  FIXP_DBL boost;
++  SCHAR boost_e;
++  if (accu == FL2FXCONST_DBL(0.0f)) {
++    boost = FL2FXCONST_DBL(0.6279716f);
++    boost_e = 2;
++  } else {
++    INT div_e;
++    boost = fDivNorm(sumRef, accu, &div_e);
++    boost_e = sumRef_e - accu_e + div_e;
++  }
++  if (boost_e > 3 ||
++      (boost_e == 2 && boost > FL2FXCONST_DBL(0.6279716f)) ||
++      (boost_e == 3 && boost > FL2FXCONST_DBL(0.3139858f))) {
++    boost = FL2FXCONST_DBL(0.6279716f);
++    boost_e = 2;
++  }
++  for (int k = 0; k < count; ++k) {
++    gain_m[k] = fMultDiv2(nrgs.nrgGain[k], boost);
++    gain_e[k] = nrgs.nrgGain_e[k] + boost_e + 1;
++    sine_m[k] = fMultDiv2(nrgs.nrgSine[k], boost);
++    sine_e[k] = nrgs.nrgSine_e[k] + boost_e + 1;
++    noise_level_m[k] = fMultDiv2(nrgs.noiseLevel[k], boost);
++    noise_level_e[k] = nrgs.noiseLevel_e[k] + boost_e + 1;
++  }
++  return 0;
++}
++#endif
+diff --git a/libSBRdec/src/lpp_tran.cpp b/libSBRdec/src/lpp_tran.cpp
+index 01951c8..dde447d 100644
+--- a/libSBRdec/src/lpp_tran.cpp
++++ b/libSBRdec/src/lpp_tran.cpp
+@@ -1490,3 +1490,84 @@ resetLppTransposer(
+ 
+   return SBRDEC_OK;
+ }
++
++#ifdef FDK_RUST_TEST_BRIDGE
++extern "C" int fdk_sbr_inverse_filtered_patch_test(
++    const LONG *real, const LONG *imag, int total_samples,
++    unsigned char mode_value, unsigned char previous_mode_value,
++    LONG previous_bandwidth, LONG *real_output, LONG *imag_output,
++    int *high_band_scale) {
++  if (total_samples < 3 || total_samples > 34) return -1;
++  const int slots = total_samples - LPC_ORDER;
++  TRANSPOSER_SETTINGS settings = {};
++  settings.nCols = slots;
++  settings.noOfPatches = 1;
++  settings.lbStartPatching = 5;
++  settings.lbStopPatching = 6;
++  settings.bwBorders[0] = 64;
++  settings.patchParam[0].sourceStartBand = 5;
++  settings.patchParam[0].sourceStopBand = 6;
++  settings.patchParam[0].guardStartBand = 32;
++  settings.patchParam[0].targetStartBand = 32;
++  settings.patchParam[0].targetBandOffs = 27;
++  settings.patchParam[0].numBandsInPatch = 1;
++  settings.whFactors.off = FL2FXCONST_DBL(0.0f);
++  settings.whFactors.transitionLevel = FL2FXCONST_DBL(0.6f);
++  settings.whFactors.lowLevel = FL2FXCONST_DBL(0.75f);
++  settings.whFactors.midLevel = FL2FXCONST_DBL(0.90f);
++  settings.whFactors.highLevel = FL2FXCONST_DBL(0.98f);
++  SBR_LPP_TRANS transposer = {};
++  transposer.pSettings = &settings;
++  transposer.bwVectorOld[0] = previous_bandwidth;
++  transposer.lpcFilterStatesRealLegSBR[0][5] = real[0];
++  transposer.lpcFilterStatesRealLegSBR[1][5] = real[1];
++  transposer.lpcFilterStatesImagLegSBR[0][5] = imag[0];
++  transposer.lpcFilterStatesImagLegSBR[1][5] = imag[1];
++  FIXP_DBL real_data[32][64] = {};
++  FIXP_DBL imag_data[32][64] = {};
++  FIXP_DBL *real_slots[32];
++  FIXP_DBL *imag_slots[32];
++  for (int slot = 0; slot < slots; ++slot) {
++    real_data[slot][5] = real[slot + LPC_ORDER];
++    imag_data[slot][5] = imag[slot + LPC_ORDER];
++    real_slots[slot] = real_data[slot];
++    imag_slots[slot] = imag_data[slot];
++  }
++  QMF_SCALE_FACTOR scale = {};
++  FIXP_DBL degree_alias[64] = {};
++  INVF_MODE mode = static_cast<INVF_MODE>(mode_value);
++  INVF_MODE previous_mode = static_cast<INVF_MODE>(previous_mode_value);
++  lppTransposer(&transposer, &scale, real_slots, degree_alias, imag_slots, 0,
++                0, 5, 1, 0, 0, 1, &mode, &previous_mode);
++  for (int slot = 0; slot < slots; ++slot) {
++    real_output[slot] = real_data[slot][32];
++    imag_output[slot] = imag_data[slot][32];
++  }
++  *high_band_scale = scale.hb_scale;
++  return 0;
++}
++
++extern "C" int fdk_sbr_inverse_filter_levels_test(
++    const unsigned char *modes, const unsigned char *previous_modes,
++    const LONG *previous_bandwidths, int count, LONG *bandwidths) {
++  if (count < 0 || count > MAX_NUM_PATCHES) return -1;
++  TRANSPOSER_SETTINGS settings = {};
++  settings.whFactors.off = FL2FXCONST_DBL(0.0f);
++  settings.whFactors.transitionLevel = FL2FXCONST_DBL(0.6f);
++  settings.whFactors.lowLevel = FL2FXCONST_DBL(0.75f);
++  settings.whFactors.midLevel = FL2FXCONST_DBL(0.90f);
++  settings.whFactors.highLevel = FL2FXCONST_DBL(0.98f);
++  SBR_LPP_TRANS transposer = {};
++  transposer.pSettings = &settings;
++  INVF_MODE current[MAX_NUM_PATCHES] = {};
++  INVF_MODE previous[MAX_NUM_PATCHES] = {};
++  for (int i = 0; i < count; ++i) {
++    current[i] = static_cast<INVF_MODE>(modes[i]);
++    previous[i] = static_cast<INVF_MODE>(previous_modes[i]);
++    transposer.bwVectorOld[i] = previous_bandwidths[i];
++  }
++  inverseFilteringLevelEmphasis(&transposer, count, current, previous,
++                                bandwidths);
++  return 0;
++}
++#endif
+diff --git a/libSBRenc/src/code_env.cpp b/libSBRenc/src/code_env.cpp
+index fb0f6a4..49eedff 100644
+--- a/libSBRenc/src/code_env.cpp
++++ b/libSBRenc/src/code_env.cpp
+@@ -600,3 +600,132 @@ INT FDKsbrEnc_InitSbrCodeEnvelope(HANDLE_SBR_CODE_ENVELOPE h_sbrCodeEnvelope,
+ 
+   return (0);
+ }
++
++#ifdef FDK_RUST_TEST_BRIDGE
++extern "C" int fdk_sbr_code_envelope_test(
++    const signed char *absolute_values, int frames, int bands,
++    signed char *coded_values, int *directions) {
++  if (absolute_values == NULL || coded_values == NULL || directions == NULL ||
++      frames <= 0 || bands <= 0 || bands > MAX_FREQ_COEFFS) {
++    return -1;
++  }
++  SBR_ENV_DATA envData = {};
++  SBR_CODE_ENVELOPE envelope = {};
++  SBR_CODE_ENVELOPE noise = {};
++  INT nSfb[2] = {bands, bands};
++  if (FDKsbrEnc_InitSbrCodeEnvelope(&envelope, nSfb, 1,
++                                    FL2FXCONST_DBL(0.3f),
++                                    FL2FXCONST_DBL(0.3f)) != 0 ||
++      FDKsbrEnc_InitSbrCodeEnvelope(&noise, nSfb, 1, 0, 0) != 0 ||
++      FDKsbrEnc_InitSbrHuffmanTables(&envData, &envelope, &noise,
++                                     SBR_AMP_RES_3_0) != 0) {
++    return -2;
++  }
++  const FREQ_RES resolution[1] = {FREQ_RES_HIGH};
++  for (int frame = 0; frame < frames; ++frame) {
++    SCHAR *coded = coded_values + frame * bands;
++    FDKmemcpy(coded, absolute_values + frame * bands,
++              bands * sizeof(SCHAR));
++    FDKsbrEnc_codeEnvelope(coded, resolution, &envelope,
++                           directions + frame, 0, 1, 0, frame == 0);
++    if (directions[frame] == TIME) {
++      envelope.dF_edge_incr_fac++;
++    } else {
++      envelope.dF_edge_incr_fac = 0;
++    }
++  }
++  return 0;
++}
++
++extern "C" int fdk_sbr_coupled_delta_bits_test(
++    const signed char *current, const signed char *previous, int bands,
++    int channel, int amp_res_1_5, int *frequency_bits, int *time_bits) {
++  if (current == NULL || previous == NULL || frequency_bits == NULL ||
++      time_bits == NULL || bands <= 0 || bands > MAX_FREQ_COEFFS ||
++      channel < 0 || channel > 1) {
++    return -1;
++  }
++  SBR_ENV_DATA envData = {};
++  SBR_CODE_ENVELOPE envelope = {};
++  SBR_CODE_ENVELOPE noise = {};
++  INT nSfb[2] = {bands, bands};
++  if (FDKsbrEnc_InitSbrCodeEnvelope(&envelope, nSfb, 1,
++                                    FL2FXCONST_DBL(0.3f),
++                                    FL2FXCONST_DBL(0.3f)) != 0 ||
++      FDKsbrEnc_InitSbrCodeEnvelope(&noise, nSfb, 1, 0, 0) != 0 ||
++      FDKsbrEnc_InitSbrHuffmanTables(
++          &envData, &envelope, &noise,
++          amp_res_1_5 ? SBR_AMP_RES_1_5 : SBR_AMP_RES_3_0) != 0) {
++    return -2;
++  }
++  const INT factor = channel == 1 ? 1 : 0;
++  *frequency_bits = channel == 1 ? envelope.start_bits_balance
++                                 : envelope.start_bits;
++  *time_bits = 0;
++  for (int band = 0; band < bands; ++band) {
++    SCHAR timeDelta = (current[band] - previous[band]) >> factor;
++    *time_bits += computeBits(
++        &timeDelta, envelope.codeBookScfLavLevelTime,
++        envelope.codeBookScfLavBalanceTime, envelope.hufftableLevelTimeL,
++        envelope.hufftableBalanceTimeL, 1, channel);
++    if (band > 0) {
++      SCHAR frequencyDelta =
++          (current[band] - current[band - 1]) >> factor;
++      *frequency_bits += computeBits(
++          &frequencyDelta, envelope.codeBookScfLavLevelFreq,
++          envelope.codeBookScfLavBalanceFreq, envelope.hufftableLevelFreqL,
++          envelope.hufftableBalanceFreqL, 1, channel);
++    }
++  }
++  return 0;
++}
++
++extern "C" int fdk_sbr_first_env_threshold_test(int time_bits, int streak) {
++  if (time_bits < 0 || streak < 0) return -1;
++  const FIXP_DBL first = FL2FXCONST_DBL(0.3f);
++  const FIXP_DBL increment = FL2FXCONST_DBL(0.3f);
++  FIXP_DBL edge =
++      (FL2FXCONST_DBL(0.5f) >> (DFRACT_BITS - 16 - 1)) +
++      (first >> (DFRACT_BITS - 16)) +
++      (FIXP_DBL)fMult(increment, ((FIXP_DBL)streak) << 15);
++  return (((time_bits * edge) >> (DFRACT_BITS - 18)) + (FIXP_DBL)1) >> 1;
++}
++
++extern "C" int fdk_sbr_code_envelope_coupled_test(
++    const signed char *absolute_values, int frames, int bands, int channel,
++    int amp_res_1_5, signed char *coded_values, int *directions) {
++  if (absolute_values == NULL || coded_values == NULL || directions == NULL ||
++      frames <= 0 || bands <= 0 || bands > MAX_FREQ_COEFFS || channel < 0 ||
++      channel > 1) {
++    return -1;
++  }
++  SBR_ENV_DATA envData = {};
++  SBR_CODE_ENVELOPE envelope = {};
++  SBR_CODE_ENVELOPE noise = {};
++  INT nSfb[2] = {bands, bands};
++  if (FDKsbrEnc_InitSbrCodeEnvelope(&envelope, nSfb, 1,
++                                    FL2FXCONST_DBL(0.3f),
++                                    FL2FXCONST_DBL(0.3f)) != 0 ||
++      FDKsbrEnc_InitSbrCodeEnvelope(&noise, nSfb, 1, 0, 0) != 0 ||
++      FDKsbrEnc_InitSbrHuffmanTables(
++          &envData, &envelope, &noise,
++          amp_res_1_5 ? SBR_AMP_RES_1_5 : SBR_AMP_RES_3_0) != 0) {
++    return -2;
++  }
++  const FREQ_RES resolution[1] = {FREQ_RES_HIGH};
++  for (int frame = 0; frame < frames; ++frame) {
++    SCHAR *coded = coded_values + frame * bands;
++    FDKmemcpy(coded, absolute_values + frame * bands,
++              bands * sizeof(SCHAR));
++    FDKsbrEnc_codeEnvelope(coded, resolution, &envelope,
++                           directions + frame, 1, 1, channel, frame == 0);
++    if (directions[frame] == TIME) {
++      envelope.dF_edge_incr_fac++;
++    } else {
++      envelope.dF_edge_incr_fac = 0;
++    }
++  }
++  return 0;
++}
++
++#endif
+diff --git a/libSBRenc/src/env_est.cpp b/libSBRenc/src/env_est.cpp
+index e7eea37..50acd8a 100644
+--- a/libSBRenc/src/env_est.cpp
++++ b/libSBRenc/src/env_est.cpp
+@@ -114,6 +114,20 @@ amm-info@iis.fraunhofer.de
+ 
+ #define QUANT_ERROR_THRES 200
+ #define Y_NRG_SCALE 5 /* noCols = 32 -> shift(5) */
++
++#ifdef FDK_RUST_TEST_BRIDGE
++static int g_rust_capture_envelope = 0;
++static int g_rust_envelope_count[2] = {};
++static signed char g_rust_envelope_values[2][MAX_NUM_ENVELOPE_VALUES] = {};
++static int g_rust_ybuffer_scale[2][2] = {};
++static int g_rust_qmf_scale[2] = {};
++static int g_rust_calculation_index = 0;
++static int g_rust_prequant_count[2] = {};
++static int g_rust_prequant_energy[2][MAX_NUM_ENVELOPE_VALUES] = {};
++static int g_rust_prequant_samples[2][MAX_NUM_ENVELOPE_VALUES] = {};
++static int g_rust_common_scale[2] = {};
++static int g_rust_transient_info[2][2] = {};
++#endif
+ #define MAX_NRG_SLOTS_LD 16
+ 
+ static const UCHAR panTable[2][10] = {{0, 2, 4, 6, 8, 12, 16, 20, 24},
+@@ -736,6 +750,11 @@ static void calculateSbrEnvelope(
+ 
+ {
+   int env, j, m = 0;
++#ifdef FDK_RUST_TEST_BRIDGE
++  int capture_channel = -1;
++  if (g_rust_capture_envelope && g_rust_calculation_index < 2)
++    capture_channel = g_rust_calculation_index++;
++#endif
+   INT no_of_bands, start_pos, stop_pos, li, ui;
+   FREQ_RES freq_res;
+ 
+@@ -928,6 +947,15 @@ static void calculateSbrEnvelope(
+         nrgLeft = (nrgRight + nrgLeft) >> 1;
+       }
+ 
++#ifdef FDK_RUST_TEST_BRIDGE
++      if (capture_channel >= 0 && m < MAX_NUM_ENVELOPE_VALUES) {
++        g_rust_prequant_energy[capture_channel][m] = nrgLeft;
++        g_rust_prequant_samples[capture_channel][m] = count[j];
++        g_rust_common_scale[capture_channel] = commonScale;
++        g_rust_prequant_count[capture_channel] = m + 1;
++      }
++#endif
++
+       /* nrgLeft = f20_log2(nrgLeft / (PFLOAT)(count * 64))+(PFLOAT)44; */
+       /* If nrgLeft == 0 then the Log calculations below do fail. */
+       if (nrgLeft > FL2FXCONST_DBL(0.0f)) {
+@@ -1259,6 +1287,12 @@ void FDKsbrEnc_extractSbrEnvelope2(
+     HANDLE_ENV_CHANNEL hEnvChan = h_envChan[ch];
+     HANDLE_SBR_EXTRACT_ENVELOPE sbrExtrEnv = &hEnvChan->sbrExtractEnvelope;
+     SBR_ENV_TEMP_DATA *ed = &eData[ch];
++#ifdef FDK_RUST_TEST_BRIDGE
++    if (g_rust_capture_envelope && ch < 2) {
++      g_rust_transient_info[ch][0] = ed->transient_info[0];
++      g_rust_transient_info[ch][1] = ed->transient_info[1];
++    }
++#endif
+ 
+     /*
+        Send transient info to bitstream and store for next call
+@@ -1366,6 +1400,9 @@ void FDKsbrEnc_extractSbrEnvelope2(
+   /*
+     Extract envelope of current frame.
+   */
++#ifdef FDK_RUST_TEST_BRIDGE
++  g_rust_calculation_index = 0;
++#endif
+   switch (stereoMode) {
+     case SBR_MONO:
+       calculateSbrEnvelope(h_envChan[0]->sbrExtractEnvelope.YBuffer, NULL,
+@@ -1411,6 +1448,25 @@ void FDKsbrEnc_extractSbrEnvelope2(
+       break;
+   }
+ 
++#ifdef FDK_RUST_TEST_BRIDGE
++  if (g_rust_capture_envelope) {
++    for (ch = 0; ch < nChannels && ch < 2; ch++) {
++      int count = 0;
++      for (i = 0; i < eData[ch].nEnvelopes; i++)
++        count += h_envChan[ch]->encEnvData.noScfBands[i];
++      count = fixMin(count, MAX_NUM_ENVELOPE_VALUES);
++      g_rust_envelope_count[ch] = count;
++      FDKmemcpy(g_rust_envelope_values[ch], eData[ch].sfb_nrg,
++                count * sizeof(SCHAR));
++      g_rust_ybuffer_scale[ch][0] =
++          h_envChan[ch]->sbrExtractEnvelope.YBufferScale[0];
++      g_rust_ybuffer_scale[ch][1] =
++          h_envChan[ch]->sbrExtractEnvelope.YBufferScale[1];
++      g_rust_qmf_scale[ch] = h_envChan[ch]->qmfScale;
++    }
++  }
++#endif
++
+   /*
+     Noise floor quantisation and coding.
+   */
+@@ -1991,3 +2047,195 @@ INT FDKsbrEnc_GetEnvEstDelay(HANDLE_SBR_EXTRACT_ENVELOPE hSbr) {
+           - hSbr->rBufferReadOffset); /* in reference hold half spec and calc
+                                          nrg's on overlapped spec */
+ }
++
++#ifdef FDK_RUST_TEST_BRIDGE
++extern "C" void fdk_sbr_envelope_capture_enable(int enable) {
++  g_rust_capture_envelope = enable;
++  if (enable) {
++    FDKmemclear(g_rust_envelope_count, sizeof(g_rust_envelope_count));
++    FDKmemclear(g_rust_envelope_values, sizeof(g_rust_envelope_values));
++    FDKmemclear(g_rust_ybuffer_scale, sizeof(g_rust_ybuffer_scale));
++    FDKmemclear(g_rust_qmf_scale, sizeof(g_rust_qmf_scale));
++    FDKmemclear(g_rust_prequant_count, sizeof(g_rust_prequant_count));
++    FDKmemclear(g_rust_prequant_energy, sizeof(g_rust_prequant_energy));
++    FDKmemclear(g_rust_prequant_samples, sizeof(g_rust_prequant_samples));
++    FDKmemclear(g_rust_common_scale, sizeof(g_rust_common_scale));
++    FDKmemclear(g_rust_transient_info, sizeof(g_rust_transient_info));
++  }
++}
++
++extern "C" int fdk_sbr_transient_capture_get(int channel, int *position,
++                                               int *flag) {
++  if (channel < 0 || channel >= 2 || position == NULL || flag == NULL)
++    return -1;
++  *position = g_rust_transient_info[channel][0];
++  *flag = g_rust_transient_info[channel][1];
++  return 0;
++}
++
++extern "C" int fdk_sbr_envelope_capture_get(
++    int channel, signed char *values, int capacity, int *scale0, int *scale1,
++    int *qmf_scale) {
++  if (channel < 0 || channel >= 2 || values == NULL || capacity < 0)
++    return -1;
++  int count = fixMin(capacity, g_rust_envelope_count[channel]);
++  FDKmemcpy(values, g_rust_envelope_values[channel], count * sizeof(SCHAR));
++  if (scale0 != NULL) *scale0 = g_rust_ybuffer_scale[channel][0];
++  if (scale1 != NULL) *scale1 = g_rust_ybuffer_scale[channel][1];
++  if (qmf_scale != NULL) *qmf_scale = g_rust_qmf_scale[channel];
++  return count;
++}
++
++extern "C" int fdk_sbr_prequant_capture_get(
++    int channel, int *energies, int *sample_counts, int capacity,
++    int *common_scale) {
++  if (channel < 0 || channel >= 2 || energies == NULL ||
++      sample_counts == NULL || capacity < 0)
++    return -1;
++  int count = fixMin(capacity, g_rust_prequant_count[channel]);
++  FDKmemcpy(energies, g_rust_prequant_energy[channel], count * sizeof(int));
++  FDKmemcpy(sample_counts, g_rust_prequant_samples[channel],
++            count * sizeof(int));
++  if (common_scale != NULL) *common_scale = g_rust_common_scale[channel];
++  return count;
++}
++
++extern "C" int fdk_sbr_complex_energy_test(
++    const int *real, const int *imag, int slots, int bands, int qmf_scale,
++    int *energies, int *energy_scale) {
++  if (real == NULL || imag == NULL || energies == NULL ||
++      energy_scale == NULL || slots <= 0 || slots > MAX_NRG_SLOTS_LD ||
++      bands <= 0 || bands > 64) {
++    return -1;
++  }
++  FIXP_DBL real_storage[MAX_NRG_SLOTS_LD][64] = {};
++  FIXP_DBL imag_storage[MAX_NRG_SLOTS_LD][64] = {};
++  FIXP_DBL energy_storage[MAX_NRG_SLOTS_LD][64] = {};
++  FIXP_DBL *real_rows[MAX_NRG_SLOTS_LD];
++  FIXP_DBL *imag_rows[MAX_NRG_SLOTS_LD];
++  FIXP_DBL *energy_rows[MAX_NRG_SLOTS_LD];
++  for (int slot = 0; slot < slots; slot++) {
++    real_rows[slot] = real_storage[slot];
++    imag_rows[slot] = imag_storage[slot];
++    energy_rows[slot] = energy_storage[slot];
++    for (int band = 0; band < bands; band++) {
++      real_storage[slot][band] = real[slot * bands + band];
++      imag_storage[slot][band] = imag[slot * bands + band];
++    }
++  }
++  FDKsbrEnc_getEnergyFromCplxQmfDataFull(
++      energy_rows, real_rows, imag_rows, bands, slots, &qmf_scale,
++      energy_scale);
++  for (int slot = 0; slot < slots; slot++) {
++    for (int band = 0; band < bands; band++) {
++      energies[slot * bands + band] = energy_storage[slot][band];
++    }
++  }
++  return qmf_scale;
++}
++
++extern "C" int fdk_sbr_sfb_energy_test(
++    const int *energies, int slots, int bands, int lower_band,
++    int upper_band, int start_slot, int stop_slot, int scale0, int scale1) {
++  if (energies == NULL || slots <= 0 || slots > MAX_NRG_SLOTS_LD ||
++      bands <= 0 || bands > 64 || lower_band < 0 ||
++      upper_band < lower_band || upper_band > bands || start_slot < 0 ||
++      stop_slot < start_slot || stop_slot > slots) {
++    return (int)0x80000000;
++  }
++  FIXP_DBL storage[MAX_NRG_SLOTS_LD][64] = {};
++  FIXP_DBL *rows[MAX_NRG_SLOTS_LD];
++  for (int slot = 0; slot < slots; slot++) {
++    rows[slot] = storage[slot];
++    for (int band = 0; band < bands; band++) {
++      storage[slot][band] = energies[slot * bands + band];
++    }
++  }
++  return getEnvSfbEnergy(lower_band, upper_band, start_slot, stop_slot,
++                         stop_slot, rows, 0, scale0, scale1);
++}
++
++extern "C" int fdk_sbr_sfb_energy_split_test(
++    const int *energies, int slots, int bands, int lower_band,
++    int upper_band, int start_slot, int stop_slot, int border_slot,
++    int scale0, int scale1) {
++  if (energies == NULL || slots <= 0 || slots > MAX_NRG_SLOTS_LD ||
++      bands <= 0 || bands > 64 || lower_band < 0 ||
++      upper_band < lower_band || upper_band > bands || start_slot < 0 ||
++      border_slot < start_slot || stop_slot < border_slot ||
++      stop_slot > slots) {
++    return (int)0x80000000;
++  }
++  FIXP_DBL storage[MAX_NRG_SLOTS_LD][64] = {};
++  FIXP_DBL *rows[MAX_NRG_SLOTS_LD];
++  for (int slot = 0; slot < slots; slot++) {
++    rows[slot] = storage[slot];
++    for (int band = 0; band < bands; band++)
++      storage[slot][band] = energies[slot * bands + band];
++  }
++  return getEnvSfbEnergy(lower_band, upper_band, start_slot, stop_slot,
++                         border_slot, rows, 0, scale0, scale1);
++}
++
++extern "C" int fdk_sbr_log2_ld64_test(const int *values, int count,
++                                        int *output) {
++  if (values == NULL || output == NULL || count < 0) return -1;
++  for (int i = 0; i < count; i++) output[i] = CalcLdData(values[i]);
++  return 0;
++}
++
++extern "C" int fdk_sbr_quantize_energy_test(int energy, int sample_count,
++                                              int common_scale,
++                                              int amp_res_3db) {
++  int one_bit_less = amp_res_3db ? 1 : 0;
++  FIXP_DBL nrg = energy;
++  if (nrg > 0) {
++    int normalization = CountLeadingBits(nrg);
++    nrg <<= normalization;
++    FIXP_DBL energy_log = CalcLdData(nrg);
++    FIXP_DBL scale_log = ((FIXP_DBL)(common_scale + normalization))
++                         << (DFRACT_BITS - 1 - LD_DATA_SHIFT - 1);
++    FIXP_DBL count_value = ((FIXP_DBL)(sample_count * 64))
++                           << (DFRACT_BITS - 1 - 14 - 1);
++    FIXP_DBL count_log = CalcLdData(count_value);
++    FIXP_DBL offset = FL2FXCONST_DBL(0.6875f - 0.21875f - 0.015625f) >> 1;
++    nrg = ((energy_log - count_log) >> 1) + (offset - scale_log);
++  } else {
++    nrg = FL2FXCONST_DBL(-1.0f);
++  }
++  nrg = fixMin(fixMax(nrg, FL2FXCONST_DBL(0.0f)),
++               (FL2FXCONST_DBL(0.5f) >> one_bit_less));
++  nrg >>= (DFRACT_BITS - 1 - LD_DATA_SHIFT - 1 - one_bit_less - 1);
++  return ((INT)nrg + 1) >> 1;
++}
++
++extern "C" int fdk_sbr_global_tonality_test(
++    const int *quotas, const int *energies, int estimates, int slots,
++    int bands, int start_band, int previous_tonality, int *current_tonality,
++    int *global_tonality, int *amp_res_3db) {
++  if (quotas == NULL || energies == NULL || current_tonality == NULL ||
++      global_tonality == NULL || amp_res_3db == NULL || estimates <= 0 ||
++      estimates > 4 || (slots != 15 && slots != 16) || bands <= 0 ||
++      bands > 64 || start_band < 0 || start_band >= bands) {
++    return -1;
++  }
++  const FIXP_DBL *quota_rows[4];
++  const FIXP_DBL *energy_rows[16];
++  for (int i = 0; i < estimates; ++i) {
++    quota_rows[i] = (const FIXP_DBL *)(quotas + i * bands);
++  }
++  for (int i = 0; i < slots; ++i) {
++    energy_rows[i] = (const FIXP_DBL *)(energies + i * bands);
++  }
++  FIXP_DBL current = FDKsbrEnc_GetTonality(
++      quota_rows, estimates, 0, energy_rows, (UCHAR)start_band, bands, slots);
++  FIXP_DBL global = (current >> 1) + ((FIXP_DBL)previous_tonality >> 1);
++  const FIXP_DBL threshold =
++      FL2FXCONST_DBL(75.0f * 0.524288f / (2.0f / 3.0f) / 128.0f);
++  *current_tonality = current;
++  *global_tonality = global;
++  *amp_res_3db =
++      fIsLessThan(threshold, 7, global, RELAXATION_SHIFT + 2) ? 0 : 1;
++  return 0;
++}
++#endif
+diff --git a/libSBRenc/src/invf_est.cpp b/libSBRenc/src/invf_est.cpp
+index 53b47ac..2484e32 100644
+--- a/libSBRenc/src/invf_est.cpp
++++ b/libSBRenc/src/invf_est.cpp
+@@ -492,6 +492,144 @@ static INVF_MODE decisionAlgorithm(
+   return (INVF_MODE)(invFiltLevel);
+ }
+ 
++#ifdef FDK_RUST_TEST_BRIDGE
++static int g_rust_invf_capture_enabled = 0;
++static int g_rust_invf_capture_call = 0;
++static int g_rust_invf_capture_count[2] = {};
++static unsigned char g_rust_invf_capture_modes[2][MAX_NUM_NOISE_VALUES] = {};
++static int g_rust_invf_capture_orig_regions[2][MAX_NUM_NOISE_VALUES] = {};
++static int g_rust_invf_capture_sbr_regions[2][MAX_NUM_NOISE_VALUES] = {};
++static int g_rust_invf_capture_estimates[2] = {};
++static int g_rust_invf_capture_quotas[2][MAX_NO_OF_ESTIMATES][64] = {};
++
++extern "C" void fdk_sbr_invf_capture_enable(int enable) {
++  g_rust_invf_capture_enabled = enable;
++  if (enable) {
++    g_rust_invf_capture_call = 0;
++    FDKmemclear(g_rust_invf_capture_count, sizeof(g_rust_invf_capture_count));
++  }
++}
++
++extern "C" int fdk_sbr_invf_quota_capture_get(int channel, int *quotas,
++                                                int capacity) {
++  if (channel < 0 || channel >= 2 || quotas == NULL || capacity < 0) return -1;
++  int count = fixMin(capacity, g_rust_invf_capture_estimates[channel] * 64);
++  FDKmemcpy(quotas, g_rust_invf_capture_quotas[channel], count * sizeof(int));
++  return count;
++}
++
++extern "C" int fdk_sbr_invf_capture_get(int channel, unsigned char *modes,
++                                          int *orig_regions,
++                                          int *sbr_regions, int capacity) {
++  if (channel < 0 || channel >= 2 || modes == NULL || orig_regions == NULL ||
++      sbr_regions == NULL || capacity < 0)
++    return -1;
++  int count = fixMin(capacity, g_rust_invf_capture_count[channel]);
++  FDKmemcpy(modes, g_rust_invf_capture_modes[channel], count);
++  FDKmemcpy(orig_regions, g_rust_invf_capture_orig_regions[channel],
++            count * sizeof(int));
++  FDKmemcpy(sbr_regions, g_rust_invf_capture_sbr_regions[channel],
++            count * sizeof(int));
++  return count;
++}
++
++extern "C" int fdk_sbr_invf_regions_test(
++    const int *origValues, const int *sbrValues, const int *nrgValues,
++    const unsigned char *transientFlags, int frames, unsigned char *modes) {
++  if (origValues == NULL || sbrValues == NULL || nrgValues == NULL ||
++      transientFlags == NULL || modes == NULL || frames < 0) {
++    return -1;
++  }
++  int previousSbr = 0;
++  int previousOrig = 0;
++  for (int frame = 0; frame < frames; frame++) {
++    int sbrBorders[4], origBorders[4], energyBorders[4];
++    for (int i = 0; i < 4; i++) {
++      sbrBorders[i] = detectorParamsAAC.quantStepsSbr[i] >> 6;
++      origBorders[i] = detectorParamsAAC.quantStepsOrig[i] >> 6;
++      energyBorders[i] = detectorParamsAAC.nrgBorders[i] >> 7;
++    }
++    if (previousSbr < 4) sbrBorders[previousSbr] += 1 << 16;
++    if (previousSbr > 0) sbrBorders[previousSbr - 1] -= 1 << 16;
++    if (previousOrig < 4) origBorders[previousOrig] += 1 << 16;
++    if (previousOrig > 0) origBorders[previousOrig - 1] -= 1 << 16;
++    int sbrRegion = 0, origRegion = 0, energyRegion = 0;
++    while (sbrRegion < 4 && sbrValues[frame] >= sbrBorders[sbrRegion])
++      sbrRegion++;
++    while (origRegion < 4 && origValues[frame] >= origBorders[origRegion])
++      origRegion++;
++    while (energyRegion < 4 && nrgValues[frame] >= energyBorders[energyRegion])
++      energyRegion++;
++    previousSbr = sbrRegion;
++    previousOrig = origRegion;
++    int level = transientFlags[frame]
++                    ? detectorParamsAAC.regionSpaceTransient[sbrRegion][origRegion]
++                    : detectorParamsAAC.regionSpace[sbrRegion][origRegion];
++    modes[frame] = (unsigned char)max(
++        level + detectorParamsAAC.EnergyCompFactor[energyRegion], 0);
++  }
++  return 0;
++}
++
++extern "C" int fdk_sbr_invf_detector_test(
++    const int *quotas, const int *energies, const signed char *indexVector,
++    const int *bandTable, const unsigned char *transientFlags, int frames,
++    int estimates, int channels, int bands, unsigned char *modes,
++    int *origRegions, int *sbrRegions) {
++  if (quotas == NULL || energies == NULL || indexVector == NULL ||
++      bandTable == NULL || transientFlags == NULL || modes == NULL ||
++      frames < 0 || estimates <= 0 || estimates > MAX_NO_OF_ESTIMATES ||
++      channels <= 0 || channels > 64 || bands <= 0 ||
++      bands > MAX_NUM_NOISE_VALUES) {
++    return -1;
++  }
++
++  SBR_INV_FILT_EST detector;
++  INT detectorBands[MAX_NUM_NOISE_VALUES + 1];
++  for (int band = 0; band <= bands; band++) {
++    detectorBands[band] = bandTable[band];
++  }
++  if (FDKsbrEnc_initInvFiltDetector(&detector, detectorBands, bands, 0) != 0) {
++    return -2;
++  }
++
++  FIXP_DBL quotaStorage[MAX_NO_OF_ESTIMATES][64];
++  FIXP_DBL *quotaRows[MAX_NO_OF_ESTIMATES];
++  FIXP_DBL energyVector[MAX_NO_OF_ESTIMATES];
++  SCHAR patchVector[64];
++  INVF_MODE output[MAX_NUM_NOISE_VALUES];
++  for (int estimate = 0; estimate < estimates; estimate++) {
++    quotaRows[estimate] = quotaStorage[estimate];
++  }
++  for (int channel = 0; channel < channels; channel++) {
++    patchVector[channel] = indexVector[channel];
++  }
++
++  for (int frame = 0; frame < frames; frame++) {
++    for (int estimate = 0; estimate < estimates; estimate++) {
++      energyVector[estimate] = energies[frame * estimates + estimate];
++      for (int channel = 0; channel < channels; channel++) {
++        quotaStorage[estimate][channel] =
++            quotas[(frame * estimates + estimate) * channels + channel];
++      }
++    }
++    FDKsbrEnc_qmfInverseFilteringDetector(
++        &detector, quotaRows, energyVector, patchVector, 0, estimates,
++        transientFlags[frame] != 0, output);
++    for (int band = 0; band < bands; band++) {
++      modes[frame * bands + band] = (unsigned char)output[band];
++      if (origRegions != NULL) {
++        origRegions[frame * bands + band] = detector.prevRegionOrig[band];
++      }
++      if (sbrRegions != NULL) {
++        sbrRegions[frame * bands + band] = detector.prevRegionSbr[band];
++      }
++    }
++  }
++  return 0;
++}
++#endif
++
+ /**************************************************************************/
+ /*!
+   \brief     Estiamtion of the inverse filtering level required
+@@ -536,6 +674,25 @@ void FDKsbrEnc_qmfInverseFilteringDetector(
+         transientFlag, &hInvFilt->prevRegionSbr[band],
+         &hInvFilt->prevRegionOrig[band]);
+   }
++#ifdef FDK_RUST_TEST_BRIDGE
++  if (g_rust_invf_capture_enabled) {
++    int channel = g_rust_invf_capture_call++ & 1;
++    int count = fixMin(hInvFilt->noDetectorBands, MAX_NUM_NOISE_VALUES);
++    g_rust_invf_capture_count[channel] = count;
++    int estimates = fixMin(stopIndex - startIndex, MAX_NO_OF_ESTIMATES);
++    g_rust_invf_capture_estimates[channel] = estimates;
++    for (int estimate = 0; estimate < estimates; estimate++)
++      FDKmemcpy(g_rust_invf_capture_quotas[channel][estimate],
++                quotaMatrix[startIndex + estimate], 64 * sizeof(int));
++    for (band = 0; band < count; band++) {
++      g_rust_invf_capture_modes[channel][band] = (unsigned char)infVec[band];
++      g_rust_invf_capture_orig_regions[channel][band] =
++          hInvFilt->prevRegionOrig[band];
++      g_rust_invf_capture_sbr_regions[channel][band] =
++          hInvFilt->prevRegionSbr[band];
++    }
++  }
++#endif
+ }
+ 
+ /**************************************************************************/
+diff --git a/libSBRenc/src/sbr_encoder.cpp b/libSBRenc/src/sbr_encoder.cpp
+index c3da072..481581a 100644
+--- a/libSBRenc/src/sbr_encoder.cpp
++++ b/libSBRenc/src/sbr_encoder.cpp
+@@ -103,6 +103,43 @@ amm-info@iis.fraunhofer.de
+ #include "sbr_encoder.h"
+ 
+ #include "sbrenc_ram.h"
++
++static int g_rust_qmf_input_capture_enabled = 0;
++static INT_PCM g_rust_qmf_input[2][2048];
++static int g_rust_qmf_input_count[2] = {0, 0};
++static FIXP_DBL g_rust_qmf_real[2][2048];
++static FIXP_DBL g_rust_qmf_imag[2][2048];
++static int g_rust_qmf_output_count[2] = {0, 0};
++
++extern "C" void fdk_sbr_qmf_input_capture_enable(int enable) {
++  g_rust_qmf_input_capture_enabled = enable;
++  if (enable) {
++    g_rust_qmf_input_count[0] = 0;
++    g_rust_qmf_input_count[1] = 0;
++    g_rust_qmf_output_count[0] = 0;
++    g_rust_qmf_output_count[1] = 0;
++  }
++}
++
++extern "C" int fdk_sbr_qmf_input_capture_get(int channel, INT_PCM *output,
++                                               int capacity) {
++  if (channel < 0 || channel >= 2 || output == NULL || capacity < 0) return -1;
++  int count = fixMin(g_rust_qmf_input_count[channel], capacity);
++  FDKmemcpy(output, g_rust_qmf_input[channel], count * sizeof(INT_PCM));
++  return count;
++}
++
++extern "C" int fdk_sbr_qmf_output_capture_get(int channel, FIXP_DBL *real,
++                                                FIXP_DBL *imag,
++                                                int capacity) {
++  if (channel < 0 || channel >= 2 || real == NULL || imag == NULL ||
++      capacity < 0)
++    return -1;
++  int count = fixMin(g_rust_qmf_output_count[channel], capacity);
++  FDKmemcpy(real, g_rust_qmf_real[channel], count * sizeof(FIXP_DBL));
++  FDKmemcpy(imag, g_rust_qmf_imag[channel], count * sizeof(FIXP_DBL));
++  return count;
++}
+ #include "sbrenc_rom.h"
+ #include "sbrenc_freq_sca.h"
+ #include "env_bit.h"
+@@ -1073,16 +1110,40 @@ INT FDKsbrEnc_EnvEncodeFrame(
+       if (hSbrElement->elInfo.fParametricStereo == 0) {
+         QMF_SCALE_FACTOR tmpScale;
+         FIXP_DBL **pQmfReal, **pQmfImag;
++        INT_PCM *qmfInput =
++            samples + hSbrElement->elInfo.ChannelIndex[ch] * samplesBufSize;
+         C_AALLOC_SCRATCH_START(qmfWorkBuffer, FIXP_DBL, 64 * 2)
+ 
+         /* Obtain pointers to QMF buffers. */
+         pQmfReal = sbrExtrEnv->rBuffer;
+         pQmfImag = sbrExtrEnv->iBuffer;
+ 
++        if (g_rust_qmf_input_capture_enabled && ch < 2) {
++          int count = fixMin(
++              hSbrElement->sbrConfigData.noQmfSlots *
++                  hSbrElement->sbrConfigData.noQmfBands,
++              2048);
++          FDKmemcpy(g_rust_qmf_input[ch], qmfInput, count * sizeof(INT_PCM));
++          g_rust_qmf_input_count[ch] = count;
++        }
++
+         qmfAnalysisFiltering(
+             hSbrElement->hQmfAnalysis[ch], pQmfReal, pQmfImag, &tmpScale,
+-            samples + hSbrElement->elInfo.ChannelIndex[ch] * samplesBufSize, 0,
+-            1, qmfWorkBuffer);
++            qmfInput, 0, 1, qmfWorkBuffer);
++
++        if (g_rust_qmf_input_capture_enabled && ch < 2) {
++          int offset = 0;
++          for (int slot = 0; slot < hSbrElement->sbrConfigData.noQmfSlots;
++               slot++) {
++            int bands = hSbrElement->sbrConfigData.noQmfBands;
++            FDKmemcpy(g_rust_qmf_real[ch] + offset, pQmfReal[slot],
++                      bands * sizeof(FIXP_DBL));
++            FDKmemcpy(g_rust_qmf_imag[ch] + offset, pQmfImag[slot],
++                      bands * sizeof(FIXP_DBL));
++            offset += bands;
++          }
++          g_rust_qmf_output_count[ch] = fixMin(offset, 2048);
++        }
+ 
+         h_envChan->qmfScale = tmpScale.lb_scale + 7;
+ 
+diff --git a/libSBRenc/src/ton_corr.cpp b/libSBRenc/src/ton_corr.cpp
+index 1c050e2..fef768d 100644
+--- a/libSBRenc/src/ton_corr.cpp
++++ b/libSBRenc/src/ton_corr.cpp
+@@ -111,6 +111,7 @@ amm-info@iis.fraunhofer.de
+ #define NUM_V_COMBINE \
+   8 /* Must be a divisor of 64 and fulfill the ASSERTs below */
+ 
++
+ /**************************************************************************/
+ /*!
+   \brief Calculates the tonal to noise ration for different frequency bands
+@@ -273,6 +274,7 @@ void FDKsbrEnc_CalculateTonalityQuotas(
+                 (fMultDiv2(fac, RELAXATION_FRACT) >> RELAXATION_SHIFT) - num;
+         denom = fixp_abs(denom);
+ 
++
+         num = fMult(num, RELAXATION_FRACT);
+ 
+         numShift = CountLeadingBits(num) - 2;
+@@ -340,6 +342,47 @@ void FDKsbrEnc_CalculateTonalityQuotas(
+   C_ALLOC_SCRATCH_END(ac, ACORR_COEFS, 1)
+ }
+ 
++#ifdef FDK_RUST_TEST_BRIDGE
++extern "C" int fdk_sbr_tonality_quota_test(const int *real, const int *imag,
++                                            int samples, int *quota,
++                                            int *energy) {
++  if (real == NULL || imag == NULL || quota == NULL || energy == NULL ||
++      samples < 3 || samples > 32) {
++    return -1;
++  }
++  SBR_TON_CORR_EST state;
++  FDKmemclear(&state, sizeof(state));
++  FIXP_DBL quotaStorage[64] = {};
++  INT signStorage[64] = {};
++  FIXP_DBL realStorage[32][8] = {};
++  FIXP_DBL imagStorage[32][8] = {};
++  FIXP_DBL *realRows[32];
++  FIXP_DBL *imagRows[32];
++  for (int i = 0; i < samples; i++) {
++    realStorage[i][0] = real[i];
++    imagStorage[i][0] = imag[i];
++    realRows[i] = realStorage[i];
++    imagRows[i] = imagStorage[i];
++  }
++  state.quotaMatrix[0] = quotaStorage;
++  state.signMatrix[0] = signStorage;
++  state.noQmfChannels = 1;
++  state.bufferLength = samples;
++  state.stepSize = samples;
++  state.numberOfEstimates = 1;
++  state.numberOfEstimatesPerFrame = 1;
++  state.lpcLength[0] = samples - 2;
++  state.lpcLength[1] = samples - 2;
++  state.nextSample = 2;
++  state.move = 0;
++  state.startIndexMatrix = 0;
++  FDKsbrEnc_CalculateTonalityQuotas(&state, realRows, imagRows, 1, 0);
++  *quota = quotaStorage[0];
++  *energy = state.nrgVector[0];
++  return 0;
++}
++#endif
++
+ /**************************************************************************/
+ /*!
+   \brief Extracts the parameters required in the decoder to obtain the
+@@ -631,6 +674,30 @@ static INT resetPatch(
+   return (0);
+ }
+ 
++#ifdef FDK_RUST_TEST_BRIDGE
++extern "C" int fdk_sbr_patch_map_test(const unsigned char *master,
++                                       int master_count, int high_start,
++                                       int sample_rate, int qmf_channels,
++                                       signed char *index_vector) {
++  if (master == NULL || index_vector == NULL || master_count < 2 ||
++      master_count > MAX_FREQ_COEFFS + 1 || qmf_channels < 1 ||
++      qmf_channels > 64) {
++    return -1;
++  }
++  SBR_TON_CORR_EST state;
++  FDKmemclear(&state, sizeof(state));
++  state.guard = 0;
++  state.shiftStartSb = 1;
++  if (resetPatch(&state, 0, high_start,
++                 const_cast<unsigned char *>(master), master_count - 1,
++                 sample_rate, qmf_channels)) {
++    return -2;
++  }
++  FDKmemcpy(index_vector, state.indexVector, qmf_channels * sizeof(SCHAR));
++  return 0;
++}
++#endif
++
+ /**************************************************************************/
+ /*!
+   \brief     Creates an instance of the tonality correction parameter module.
+diff --git a/libSBRenc/src/tran_det.cpp b/libSBRenc/src/tran_det.cpp
+index 3b6765a..635eacd 100644
+--- a/libSBRenc/src/tran_det.cpp
++++ b/libSBRenc/src/tran_det.cpp
+@@ -1090,3 +1090,40 @@ void FDKsbrEnc_fastTransientDetect(
+     delta_energy_scale[timeSlot] = delta_energy_scale[nTimeSlots + timeSlot];
+   }
+ }
++
++#ifdef FDK_RUST_TEST_BRIDGE
++extern "C" int fdk_sbr_fast_transient_test(
++    const int *slot_band_energy, int frames, int time_slots, int qmf_bands,
++    int bandwidth_qmf_slot, int first_sbr_band,
++    unsigned char *transient_info) {
++  if (slot_band_energy == NULL || transient_info == NULL || frames <= 0 ||
++      time_slots <= 0 || time_slots > 32 || qmf_bands <= 0 || qmf_bands > 64 ||
++      bandwidth_qmf_slot <= 0) {
++    return -1;
++  }
++  /* Keep the test bridge deterministic even if the production initializer
++     intentionally leaves padding or currently unused members untouched. */
++  FAST_TRAN_DETECTOR detector = {};
++  if (FDKsbrEnc_InitSbrFastTransientDetector(
++          &detector, time_slots, bandwidth_qmf_slot, qmf_bands,
++          first_sbr_band) != 0) {
++    return -2;
++  }
++  FIXP_DBL *rows[32 + TRAN_DET_LOOKAHEAD];
++  int scales[2] = {0, 0};
++  for (int frame = 0; frame < frames; ++frame) {
++    const FIXP_DBL *base =
++        (const FIXP_DBL *)(slot_band_energy +
++                           (size_t)frame *
++                               (time_slots + TRAN_DET_LOOKAHEAD) * qmf_bands);
++    for (int slot = 0; slot < time_slots + TRAN_DET_LOOKAHEAD; ++slot) {
++      rows[slot] =
++          (FIXP_DBL *)(base + (size_t)slot * (size_t)qmf_bands);
++    }
++    FDKsbrEnc_fastTransientDetect(&detector, rows, scales,
++                                  time_slots + TRAN_DET_LOOKAHEAD,
++                                  transient_info + frame * 3);
++  }
++  return 0;
++}
++#endif
+
