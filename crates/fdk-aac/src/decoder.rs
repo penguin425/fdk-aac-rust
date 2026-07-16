@@ -738,7 +738,7 @@ impl AacLcDecoder {
             let mut decoder = Self::new_ga_with_frame_length(
                 42,
                 usac.sampling_frequency_index,
-                config.channel_configuration,
+                usac.channel_configuration_index,
                 usize::from(usac.core_frame_length),
             )?;
             let mut saw_core_element = false;
@@ -13000,6 +13000,35 @@ mod tests {
             .unwrap();
         assert_eq!(channels.len(), 2);
         assert!(channels.iter().all(|channel| channel.len() == 2048));
+    }
+
+    #[test]
+    fn constructs_decoder_from_real_exhale_5_1_usac_config() {
+        // AudioSpecificConfig emitted by exhale 1.2.2 for a synthetic 48 kHz
+        // six-channel WAV.  In an MPEG-4 USAC ASC, the outer
+        // channelConfiguration is zero; the actual layout is carried by
+        // usacChannelConfigIndex (six for 5.1).
+        let asc = AudioSpecificConfig::parse(&[
+            0xf9, 0x46, 0x03, 0x26, 0x4c, 0xc0, 0x15, 0x5a, 0x14, 0x80, 0x08, 0x00, 0x28, 0x7e,
+            0x11, 0x00, 0x2e, 0x00, 0x00,
+        ])
+        .unwrap();
+        assert_eq!(asc.channel_configuration, 0);
+        assert_eq!(
+            asc.usac_config
+                .as_ref()
+                .unwrap()
+                .channel_configuration_index,
+            6
+        );
+
+        let decoder = AacLcDecoder::from_audio_specific_config(&asc).unwrap();
+        let info = decoder.stream_info();
+        assert_eq!(info.sample_rate, 48_000);
+        assert_eq!(info.channel_configuration, 6);
+        assert_eq!(info.num_channels, 6);
+        assert_eq!(info.aac_num_channels, 6);
+        assert_eq!(info.flags & STREAM_FLAG_USAC, STREAM_FLAG_USAC);
     }
 
     #[test]
