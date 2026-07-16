@@ -1,19 +1,22 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "rust-v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semantic version to release (for example, 0.1.0)"
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
-  publish:
+  github-release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,75 +24,72 @@ jobs:
           fetch-depth: 0
       - name: Install stable Rust
         run: rustup update stable --no-self-update && rustup default stable
-      - name: Validate and package
+      - name: Validate release input
         env:
-          REQUIRE_ANNOTATED_TAG: "1"
-        run: ./tools/release-check.sh "$GITHUB_REF_NAME"
-      - name: Publish crates
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          VERSION: ${{ inputs.version }}
         run: |
           set -eu
-          version=${GITHUB_REF_NAME#rust-v}
-
-          crate_exists() {
-            curl --fail --silent --show-error \
-              --user-agent "fdk-aac-rust-release/${GITHUB_REPOSITORY}" \
-              "https://crates.io/api/v1/crates/$1/$version" >/dev/null 2>&1
-          }
-
-          if ! crate_exists fdk-aac-rust-sys; then
-            cargo publish -p fdk-aac-rust-sys --locked
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "Releases must be dispatched from main" >&2
+            exit 1
           fi
-
-          attempts=0
-          until crate_exists fdk-aac-rust-sys; do
-            attempts=$((attempts + 1))
-            if [ "$attempts" -ge 30 ]; then
-              echo "fdk-aac-rust-sys $version did not become visible on crates.io" >&2
-              exit 1
-            fi
-            sleep 10
-          done
-
-          cargo package -p fdk-aac-rust --locked
-          ./tools/verify-license-files.sh \
-            "target/package/fdk-aac-rust-sys-$version.crate" \
-            "target/package/fdk-aac-rust-$version.crate"
-          if ! crate_exists fdk-aac-rust; then
-            cargo publish -p fdk-aac-rust --locked
+          if ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Version must use MAJOR.MINOR.PATCH format" >&2
+            exit 1
           fi
-      - name: Create checksums
+      - name: Validate and package
+        env:
+          VERSION: ${{ inputs.version }}
+        run: ./tools/release-check.sh "rust-v$VERSION"
+      - name: Create source archive and checksums
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          cd target/package
-          sha256sum fdk-aac-rust-${GITHUB_REF_NAME#rust-v}.crate \
-            fdk-aac-rust-sys-${GITHUB_REF_NAME#rust-v}.crate > SHA256SUMS
+          set -eu
+          archive="fdk-aac-rust-$VERSION.tar.gz"
+          git archive --format=tar.gz \
+            --prefix="fdk-aac-rust-$VERSION/" \
+            --output="$archive" HEAD
+          ./tools/verify-license-files.sh "$archive"
+          sha256sum "$archive" > SHA256SUMS
+      - name: Create annotated version tag
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -eu
+          tag="rust-v$VERSION"
+          if git rev-parse "refs/tags/$tag" >/dev/null 2>&1; then
+            test "$(git cat-file -t "refs/tags/$tag")" = tag
+            test "$(git rev-list -n 1 "$tag")" = "$GITHUB_SHA"
+          else
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git tag -a "$tag" -m "fdk-aac Rust port $VERSION"
+            git push origin "refs/tags/$tag"
+          fi
       - name: Extract release notes
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          version=${GITHUB_REF_NAME#rust-v}
-          awk -v heading="## $version - " '
+          awk -v heading="## $VERSION - " '
             index($0, heading) == 1 { found = 1; next }
             found && /^## / { exit }
             found { print }
           ' CHANGELOG.md > RELEASE_NOTES.md
           test -s RELEASE_NOTES.md
-      - name: Create GitHub Release
+      - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
         run: |
-          version=${GITHUB_REF_NAME#rust-v}
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" \
-              "target/package/fdk-aac-rust-$version.crate" \
-              "target/package/fdk-aac-rust-sys-$version.crate" \
-              "target/package/SHA256SUMS" \
-              --clobber
+          set -eu
+          tag="rust-v$VERSION"
+          archive="fdk-aac-rust-$VERSION.tar.gz"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$archive" SHA256SUMS --clobber
           else
-            gh release create "$GITHUB_REF_NAME" \
-              "target/package/fdk-aac-rust-$version.crate" \
-              "target/package/fdk-aac-rust-sys-$version.crate" \
-              "target/package/SHA256SUMS" \
+            gh release create "$tag" "$archive" SHA256SUMS \
               --verify-tag \
-              --title "fdk-aac Rust port $version" \
+              --title "fdk-aac Rust port $VERSION" \
               --notes-file RELEASE_NOTES.md
           fi

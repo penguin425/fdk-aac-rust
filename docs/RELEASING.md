@@ -4,25 +4,23 @@ This project follows the original fdk-aac practice of preparing a version and
 changelog commit, validating it, and creating an annotated `rust-vX.Y.Z` Git
 tag. The `rust-` prefix distinguishes this port from the inherited upstream
 `v0.1.x` and `v2.0.x` tags.
-Distribution is adapted for Rust: crates are published to crates.io and the
-same source packages are attached to a GitHub Release. Compiled binary artifacts
+Distribution is adapted for Rust: a manually dispatched GitHub Actions workflow
+creates an annotated version tag and a GitHub Release containing the complete
+repository source archive and its SHA-256 checksum. Compiled binary artifacts
 are intentionally excluded; adding any requires satisfying the separate
 [`DISTRIBUTION.md`](DISTRIBUTION.md) binary-distribution checklist.
 
 ## One-time repository setup
 
-1. Create or claim the `fdk-aac-rust-sys` and `fdk-aac-rust` crates under the same
-   crates.io owner or team.
-2. Add a crates.io API token as the GitHub Actions secret
-   `CARGO_REGISTRY_TOKEN`.
-3. Allow GitHub Actions read/write access to repository contents so the
+1. Allow GitHub Actions read/write access to repository contents so the
    workflow can create a GitHub Release. The workflow also declares the
    required `contents: write` permission.
-4. Protect the release branch and require the CI workflow before merging.
+2. Protect `main`, require changes to arrive through pull requests, and require
+   the CI `rust` job before merging.
 
-The two crates always use the same version. `fdk-aac-rust-sys` must be published
-first because `fdk-aac-rust` references that exact compatible version when its
-default `ffi` feature is enabled.
+The two crates always use the same version. The GitHub Release is a complete
+source release; publishing either crate to crates.io is a separate operation
+and is not performed by this workflow.
 
 ## Preparing a release
 
@@ -34,46 +32,40 @@ default `ffi` feature is enabled.
 5. If needed, advance and validate `upstream/revision` separately before the
    release; do not combine an unverified upstream movement with a release.
 6. Regenerate and commit `Cargo.lock`.
-7. Run the release checks:
+7. Run the release checks locally if desired:
 
    ```sh
    ./tools/release-check.sh rust-vX.Y.Z
    ```
 
-8. Commit the version and changelog changes, then create and push an annotated
-   tag:
-
-   ```sh
-   git tag -a rust-vX.Y.Z -m "fdk-aac Rust port X.Y.Z"
-   git push origin HEAD rust-vX.Y.Z
-   ```
+8. Commit the version and changelog changes on a feature branch and merge them
+   to `main` through a pull request.
+9. In GitHub Actions, open the **Release** workflow, select **Run workflow** on
+   `main`, and enter `X.Y.Z` without the `rust-v` prefix. The workflow validates
+   the version, creates the annotated `rust-vX.Y.Z` tag, and publishes the
+   GitHub Release. Do not create or move the tag manually.
 
 ## Automated publication
 
-Pushing the tag starts `.github/workflows/release.yml`. It:
+Manually dispatching `.github/workflows/release.yml` from `main`:
 
-1. confirms that the tag is annotated and matches `Cargo.toml`;
+1. confirms that the requested version matches `Cargo.toml` and the changelog;
 2. checks the changelog, pinned upstream revision, retained license text,
    prominent modification notice, and patent warning;
 3. runs formatting, compile checks, the Pure Rust tests, and the full
    differential suite;
-4. verifies and packages `fdk-aac-rust-sys`, while validating that its source
-   archive contains exact copies of `NOTICE` and `README.md` and validating the
-   main crate's source-file set;
-5. publishes `fdk-aac-rust-sys` to crates.io;
-6. waits until that exact version is visible in the registry;
-7. fully packages and verifies `fdk-aac-rust` against the published sys crate,
-   including exact `NOTICE` and `README.md` archive contents;
-8. publishes `fdk-aac-rust`;
-9. generates SHA-256 checksums;
-10. creates a GitHub Release from the existing tag and attaches both `.crate`
-   archives and the checksum file.
+4. verifies the `fdk-aac-rust-sys` source package and the main crate's source
+   file set;
+5. creates a complete repository source archive and verifies that its `NOTICE`
+   and `README.md` exactly match the repository;
+6. generates its SHA-256 checksum;
+7. creates an annotated `rust-vX.Y.Z` tag at the tested `main` commit;
+8. creates or updates the GitHub Release and attaches the archive and checksum.
 
-The workflow never creates or moves a Git tag. A failed validation therefore
-cannot silently redefine a released version. crates.io releases are immutable;
-if publication partially succeeds, fix the cause and rerun the same tag job so
-the already-published crate is detected and skipped. Do not delete and recreate
-the tag with different source.
+The workflow never moves an existing Git tag. A rerun accepts it only when it is
+annotated and still points to the exact tested commit. If publication fails
+after tag creation, rerun the same version from that `main` commit; do not delete
+and recreate the tag with different source.
 
 ## Versioning policy
 
