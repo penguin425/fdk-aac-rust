@@ -87,6 +87,7 @@ history. Detailed migration status is maintained in
 | [`docs/DECODER_DRAINING.md`](docs/DECODER_DRAINING.md) | Decoder delay, seeking, preroll, and end-of-stream draining |
 | [`docs/UPSTREAM_ISSUES.md`](docs/UPSTREAM_ISSUES.md) | Disposition of every open upstream issue |
 | [`docs/PORT_STATUS.md`](docs/PORT_STATUS.md) | Detailed Rust migration status |
+| [`docs/ANDROID17_XHE_ENCODER.md`](docs/ANDROID17_XHE_ENCODER.md) | Android 17 xHE-AAC encoder source and license evaluation |
 | [`docs/DRC.md`](docs/DRC.md) | DRC metadata, loudness targets, and decoder controls |
 | [`tools/update-upstream.sh`](tools/update-upstream.sh) | Validated upstream revision update tool |
 
