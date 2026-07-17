@@ -5174,10 +5174,18 @@ mod tests {
                 }
             }
 
-            for (channel, channel_energy) in energy.into_iter().enumerate() {
+            for (channel, channel_energy) in energy.iter().copied().enumerate() {
                 assert!(
                     channel_energy > 1.0e-6,
                     "channel order {order}, channel {channel} was silent"
+                );
+            }
+            for (channel, pair) in energy.windows(2).enumerate() {
+                assert!(
+                    pair[1] > pair[0] * 1.1,
+                    "channel order {order} reordered channels {channel} and {}: {:?}",
+                    channel + 1,
+                    pair
                 );
             }
         }
