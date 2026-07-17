@@ -4,6 +4,16 @@ All notable changes to this third-party Rust port are documented here. Release
 versions follow semantic versioning for the Rust crates and do not replace or
 reinterpret the version numbers of the original C/C++ fdk-aac project.
 
+## 0.2.1 - 2026-07-18
+
+- Added automated crates.io publication in dependency order with safe reruns,
+  index-propagation checks, and post-publication source archives.
+- Added Cargo repository and registry metadata for both public crates.
+- Attached both `.crate` source archives and their SHA-256 checksums to GitHub
+  Releases, with retained-license verification for every archive.
+- Added a consolidated survey and prioritized backlog of public FDK AAC
+  improvement requests from upstream users, integrators, and distributions.
+
 ## 0.2.0 - 2026-07-17
 
 - Added continuous decoding of real exhale multichannel USAC streams, including
