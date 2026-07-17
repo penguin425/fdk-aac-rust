@@ -9,6 +9,39 @@ permissions:
   contents: read
 
 jobs:
+  pure-rust:
+    name: pure-rust (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - name: windows-msvc
+            os: windows-2025
+            target: x86_64-pc-windows-msvc
+          - name: macos-arm64
+            os: macos-15
+            target: aarch64-apple-darwin
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - name: linux-musl
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            musl: true
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install stable Rust target
+        run: rustup update stable --no-self-update && rustup default stable && rustup target add ${{ matrix.target }}
+      - name: Install musl tools
+        if: matrix.musl == true
+        run: sudo apt-get update && sudo apt-get install --yes musl-tools
+      - name: Test Pure Rust implementation
+        run: cargo test -p fdk-aac-rust --no-default-features --locked --target ${{ matrix.target }}
+
   rust:
     runs-on: ubuntu-latest
     steps:
@@ -19,7 +52,5 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Check workspace
         run: cargo check --workspace --all-targets --locked
-      - name: Test Pure Rust implementation
-        run: cargo test -p fdk-aac-rust --no-default-features --locked
       - name: Test differential workspace
         run: cargo test --workspace --locked

@@ -4,6 +4,11 @@ All notable changes to this third-party Rust port are documented here. Release
 versions follow semantic versioning for the Rust crates and do not replace or
 reinterpret the version numbers of the original C/C++ fdk-aac project.
 
+## Unreleased
+
+- Added Pure Rust CI on Linux x86-64, Windows MSVC, macOS ARM64, Linux ARM64,
+  and musl while retaining C/C++ differential tests on Linux x86-64.
+
 ## 0.2.1 - 2026-07-18
 
 - Added automated crates.io publication in dependency order with safe reruns,
