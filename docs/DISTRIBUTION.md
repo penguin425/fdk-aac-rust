@@ -13,7 +13,8 @@ Every source archive must include, without alteration:
 - `README.md`, containing the dated, prominent modification notice, modified
   version name, summary of changes, and patent warning.
 
-The release checks enforce these requirements for both Rust `.crate` archives.
+The release checks enforce these requirements for both Rust `.crate` archives,
+which are published to crates.io and attached to the matching GitHub Release.
 Changes must also receive a dated `CHANGELOG.md` entry and be committed before
 the annotated release tag is created.
 

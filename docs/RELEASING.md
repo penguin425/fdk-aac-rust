@@ -5,9 +5,10 @@ changelog commit, validating it, and creating an annotated `rust-vX.Y.Z` Git
 tag. The `rust-` prefix distinguishes this port from the inherited upstream
 `v0.1.x` and `v2.0.x` tags.
 Distribution is adapted for Rust: a manually dispatched GitHub Actions workflow
-creates an annotated version tag and a GitHub Release containing the complete
-repository source archive and its SHA-256 checksum. Compiled binary artifacts
-are intentionally excluded; adding any requires satisfying the separate
+publishes both source crates to crates.io, creates an annotated version tag,
+and creates a GitHub Release containing the complete repository source archive,
+the two `.crate` source archives, and their SHA-256 checksums. Compiled binary
+artifacts are intentionally excluded; adding any requires satisfying the separate
 [`DISTRIBUTION.md`](DISTRIBUTION.md) binary-distribution checklist.
 
 ## One-time repository setup
@@ -17,10 +18,15 @@ are intentionally excluded; adding any requires satisfying the separate
    required `contents: write` permission.
 2. Protect `main`, require changes to arrive through pull requests, and require
    the CI `rust` job before merging.
+3. Create a crates.io API token restricted to `publish-new` and
+   `publish-update` for `fdk-aac-rust-sys` and `fdk-aac-rust`, then store it as
+   the repository secret `CARGO_REGISTRY_TOKEN`.
 
-The two crates always use the same version. The GitHub Release is a complete
-source release; publishing either crate to crates.io is a separate operation
-and is not performed by this workflow.
+The two crates always use the same version. The workflow publishes the sys
+crate first, waits for that exact version to appear in the crates.io index, and
+then publishes the safe crate. It skips an already published matching version,
+so a failed workflow can be rerun safely from the same commit. Published crate
+versions are permanent and cannot be overwritten.
 
 ## Preparing a release
 
@@ -42,8 +48,9 @@ and is not performed by this workflow.
    to `main` through a pull request.
 9. In GitHub Actions, open the **Release** workflow, select **Run workflow** on
    `main`, and enter `X.Y.Z` without the `rust-v` prefix. The workflow validates
-   the version, creates the annotated `rust-vX.Y.Z` tag, and publishes the
-   GitHub Release. Do not create or move the tag manually.
+   the version, creates the annotated `rust-vX.Y.Z` tag, publishes both crates
+   to crates.io, and publishes the GitHub Release. Do not create or move the
+   tag manually and do not publish either crate separately.
 
 ## Automated publication
 
@@ -56,16 +63,20 @@ Manually dispatching `.github/workflows/release.yml` from `main`:
    differential suite;
 4. verifies the `fdk-aac-rust-sys` source package and the main crate's source
    file set;
-5. creates a complete repository source archive and verifies that its `NOTICE`
-   and `README.md` exactly match the repository;
-6. generates its SHA-256 checksum;
-7. creates an annotated `rust-vX.Y.Z` tag at the tested `main` commit;
-8. creates or updates the GitHub Release and attaches the archive and checksum.
+5. creates an annotated `rust-vX.Y.Z` tag at the tested `main` commit;
+6. publishes `fdk-aac-rust-sys`, waits for index propagation, and then
+   publishes `fdk-aac-rust`;
+7. creates a complete repository source archive and verifies that all three
+   source archives contain the required `NOTICE` and `README.md`;
+8. generates SHA-256 checksums and creates or updates the GitHub Release with
+   the repository archive, both `.crate` archives, and the checksum file.
 
 The workflow never moves an existing Git tag. A rerun accepts it only when it is
 annotated and still points to the exact tested commit. If publication fails
 after tag creation, rerun the same version from that `main` commit; do not delete
-and recreate the tag with different source.
+and recreate the tag with different source. The crates.io publication step also
+checks for existing versions before uploading, but it cannot replace a version
+whose source differs.
 
 ## Versioning policy
 
