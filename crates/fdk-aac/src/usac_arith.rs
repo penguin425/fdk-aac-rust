@@ -273,12 +273,16 @@ fn decode_pairs(
         value: reader.read_u16(16)?,
     };
     let mut histories = [0i32; 3];
-    let mut state_increment = u32::from(previous[0]) << 12;
+    // FDK's `state_inc` is deliberately a 16-bit value.  The context update
+    // below therefore wraps after every tuple; retaining the full 32-bit
+    // intermediate selects a different probability model once the context
+    // exceeds 0xffff and eventually misses the arithmetic stop symbol.
+    let mut state_increment = (u16::from(previous[0])) << 12;
     let mut decoded = 0;
     while decoded < pair_count {
-        let mut context = (state_increment >> 8) + (u32::from(previous[decoded + 1]) << 8);
+        let mut context = u32::from(state_increment >> 8) + (u32::from(previous[decoded + 1]) << 8);
         context = (context << 4) + histories[0] as u32;
-        state_increment = context;
+        state_increment = context as u16;
         if decoded > 3 && histories.iter().sum::<i32>() < 5 {
             context += 0x10000;
         }
