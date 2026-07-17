@@ -738,7 +738,7 @@ impl AacLcDecoder {
             let mut decoder = Self::new_ga_with_frame_length(
                 42,
                 usac.sampling_frequency_index,
-                config.channel_configuration,
+                usac.channel_configuration_index,
                 usize::from(usac.core_frame_length),
             )?;
             let mut saw_core_element = false;
@@ -2760,7 +2760,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let decoded = self.decode_raw_data_block_f32(frame.payload)?;
@@ -2868,7 +2870,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let decoded = self.decode_raw_data_block_f32_strict(frame.payload)?;
@@ -2965,7 +2969,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let pcm = self.decode_raw_data_block_fixed_interleaved_i16(frame.payload)?;
@@ -2998,7 +3004,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let pcm = self.decode_raw_data_block_fixed_interleaved_i16_strict(frame.payload)?;
@@ -4577,7 +4585,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let decoded = self.decode_raw_data_block_multichannel_f32(frame.payload)?;
@@ -4610,7 +4620,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let decoded = self.decode_raw_data_block_multichannel_f32_strict(frame.payload)?;
@@ -4643,7 +4655,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let pcm = self.decode_raw_data_block_multichannel_fixed_interleaved_i16(frame.payload)?;
@@ -4676,7 +4690,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let pcm =
@@ -9839,7 +9855,9 @@ fn validate_adts_aac_lc_configuration(
     if header.profile + 1 != decoder.audio_object_type {
         return Err(DecodeError::UnsupportedAudioObjectType(header.profile + 1));
     }
-    if header.sampling_frequency_index != decoder.sampling_frequency_index {
+    if header.sampling_frequency_index != decoder.sampling_frequency_index
+        || header.channel_configuration != decoder.channel_configuration
+    {
         return Err(DecodeError::AdtsConfigChanged);
     }
     Ok(())
@@ -12581,7 +12599,6 @@ mod tests {
         access_unit.write_bool(false); // right FD
         access_unit.write_bool(false); // TNS inactive
         access_unit.write_bool(false); // separate windows
-        access_unit.write_bool(false); // common_tw
         for _ in 0..2 {
             access_unit.write(0, 8); // global gain
             access_unit.write(0, 2); // ONLY_LONG
@@ -12843,7 +12860,6 @@ mod tests {
         stereo_payload.write_bool(false); // right FD
         stereo_payload.write_bool(false); // TNS inactive
         stereo_payload.write_bool(false); // separate windows
-        stereo_payload.write_bool(false); // common_tw
         for _ in 0..2 {
             stereo_payload.write(0, 8); // global gain
             stereo_payload.write(0, 2); // ONLY_LONG
@@ -13000,6 +13016,81 @@ mod tests {
             .unwrap();
         assert_eq!(channels.len(), 2);
         assert!(channels.iter().all(|channel| channel.len() == 2048));
+    }
+
+    #[test]
+    fn constructs_decoder_from_real_exhale_5_1_usac_config() {
+        // AudioSpecificConfig emitted by exhale 1.2.2 for a synthetic 48 kHz
+        // six-channel WAV.  In an MPEG-4 USAC ASC, the outer
+        // channelConfiguration is zero; the actual layout is carried by
+        // usacChannelConfigIndex (six for 5.1).
+        let asc = AudioSpecificConfig::parse(&[
+            0xf9, 0x46, 0x03, 0x26, 0x4c, 0xc0, 0x15, 0x5a, 0x14, 0x80, 0x08, 0x00, 0x28, 0x7e,
+            0x11, 0x00, 0x2e, 0x00, 0x00,
+        ])
+        .unwrap();
+        assert_eq!(asc.channel_configuration, 0);
+        assert_eq!(
+            asc.usac_config
+                .as_ref()
+                .unwrap()
+                .channel_configuration_index,
+            6
+        );
+
+        let decoder = AacLcDecoder::from_audio_specific_config(&asc).unwrap();
+        let info = decoder.stream_info();
+        assert_eq!(info.sample_rate, 48_000);
+        assert_eq!(info.channel_configuration, 6);
+        assert_eq!(info.num_channels, 6);
+        assert_eq!(info.aac_num_channels, 6);
+        assert_eq!(info.flags & STREAM_FLAG_USAC, STREAM_FLAG_USAC);
+    }
+
+    #[test]
+    fn decodes_real_exhale_1_2_2_5_1_access_units_continuously() {
+        let asc = AudioSpecificConfig::parse(&[
+            0xf9, 0x46, 0x03, 0x26, 0x4c, 0xc0, 0x15, 0x5a, 0x14, 0x80, 0x08, 0x00, 0x28, 0x7e,
+            0x11, 0x00, 0x2e, 0x00, 0x00,
+        ])
+        .unwrap();
+        let bytes = include_str!("testdata/exhale-1.2.2-5.1-access-units.hex")
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .flat_map(|line| line.as_bytes().chunks_exact(2))
+            .map(|pair| {
+                let digit = |value: u8| match value {
+                    b'0'..=b'9' => value - b'0',
+                    b'a'..=b'f' => value - b'a' + 10,
+                    _ => panic!("invalid fixture hex digit"),
+                };
+                digit(pair[0]) << 4 | digit(pair[1])
+            })
+            .collect::<Vec<_>>();
+        let packet_sizes = [
+            0x35e, 0xc5, 0xb7, 0xb1, 0xb8, 0xb8, 0xbb, 0xb9, 0xb6, 0xb5, 0x131, 0x2ac,
+        ];
+        assert_eq!(bytes.len(), packet_sizes.iter().sum());
+
+        let mut decoder = AacLcDecoder::from_audio_specific_config(&asc).unwrap();
+        let mut offset = 0;
+        let mut channel_energy = [0.0f64; 6];
+        for size in packet_sizes {
+            let channels = decoder
+                .decode_usac_access_unit_multichannel_f32(&bytes[offset..offset + size])
+                .unwrap();
+            assert_eq!(channels.len(), 6);
+            assert!(channels.iter().all(|channel| channel.len() == 1024));
+            for (energy, channel) in channel_energy.iter_mut().zip(channels) {
+                assert!(channel.iter().all(|sample| sample.is_finite()));
+                *energy += channel
+                    .iter()
+                    .map(|sample| f64::from(*sample) * f64::from(*sample))
+                    .sum::<f64>();
+            }
+            offset += size;
+        }
+        assert!(channel_energy.iter().all(|energy| *energy > 0.0));
     }
 
     #[test]
@@ -15189,6 +15280,7 @@ mod tests {
         multi_block_header.number_of_raw_data_blocks_in_frame = 1;
         let multiple_blocks = make_frame(multi_block_header);
         let changed_frequency = make_frame(AdtsHeader::aac_lc(48_000, 1, payload.len()).unwrap());
+        let changed_channels = make_frame(AdtsHeader::aac_lc(44_100, 2, payload.len()).unwrap());
 
         macro_rules! assert_all_facades {
             ($frame:expr, $expected:expr) => {{
@@ -15246,6 +15338,7 @@ mod tests {
             DecodeError::UnsupportedRawBlocksInAdtsFrame(1)
         );
         assert_all_facades!(&changed_frequency, DecodeError::AdtsConfigChanged);
+        assert_all_facades!(&changed_channels, DecodeError::AdtsConfigChanged);
     }
 
     #[test]
@@ -17441,6 +17534,9 @@ mod tests {
             )
             .is_err());
         let mut decoder = AacLcDecoder::from_audio_specific_config(&config).unwrap();
+        let provisional = decoder.stream_info();
+        assert_eq!(provisional.num_channels, 1);
+        assert_eq!(provisional.flags & STREAM_FLAG_PS_PRESENT, 0);
         let decoded = decoder
             .decode_raw_data_block_multichannel_f32(&raw)
             .unwrap();
@@ -17452,6 +17548,12 @@ mod tests {
         assert_eq!(decoded.channels[0].len(), 2048);
         assert_eq!(decoded.channels[1].len(), 2048);
         assert!(decoded.channels[0].iter().all(|sample| sample.is_finite()));
+        let discovered = decoder.stream_info();
+        assert_eq!(discovered.num_channels, 2);
+        assert_eq!(
+            discovered.flags & STREAM_FLAG_PS_PRESENT,
+            STREAM_FLAG_PS_PRESENT
+        );
         let padded = AacLcDecoder::from_audio_specific_config(&config)
             .unwrap()
             .decode_raw_data_block_multichannel_f32(&padded_raw)
