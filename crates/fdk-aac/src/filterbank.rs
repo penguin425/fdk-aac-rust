@@ -1527,4 +1527,23 @@ mod tests {
             assert!(!error.to_string().is_empty());
         }
     }
+
+    #[test]
+    fn flush_drains_synthesis_overlap_exactly_once() {
+        let mut float = LongBlockFilterbank::new(32).unwrap();
+        let mut spectrum = vec![0.0; 32];
+        spectrum[3] = 1.0;
+        float.process_only_long_sine(&spectrum).unwrap();
+        let delayed = float.flush();
+        assert!(delayed.iter().any(|sample| *sample != 0.0));
+        assert_eq!(float.flush(), vec![0.0; 32]);
+
+        let mut fixed = FixedLongBlockFilterbank::new(32).unwrap();
+        let mut spectrum = vec![0; 32];
+        spectrum[3] = 1 << 24;
+        fixed.process_only_long_sine_q31(&spectrum).unwrap();
+        let delayed = fixed.flush();
+        assert!(delayed.iter().any(|sample| *sample != 0));
+        assert_eq!(fixed.flush(), vec![0; 32]);
+    }
 }

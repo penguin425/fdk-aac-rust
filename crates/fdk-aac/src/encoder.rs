@@ -3606,6 +3606,40 @@ mod tests {
     }
 
     #[test]
+    fn encoder_profiles_accept_full_scale_alternating_pcm_without_overflow() {
+        for (aot, channel_mode, bitrate) in [(2, 1, 80_000), (5, 1, 64_000), (29, 2, 64_000)] {
+            let mut parameters = configured(aot, channel_mode, 48_000);
+            parameters
+                .set_parameter(EncoderParameter::Bitrate, bitrate)
+                .unwrap();
+            parameters
+                .set_parameter(EncoderParameter::BitrateMode, 5)
+                .unwrap();
+            parameters
+                .set_parameter(EncoderParameter::TransportMux, 0)
+                .unwrap();
+            let mut encoder = ConfiguredPureRustEncoder::from_parameters(&parameters).unwrap();
+            let sample_count = encoder.input_samples_per_channel()
+                * usize::try_from(encoder.config().channels).unwrap();
+            let pcm = (0..sample_count)
+                .map(|sample| {
+                    if sample & 1 == 0 {
+                        i16::MIN as f32
+                    } else {
+                        i16::MAX as f32
+                    }
+                })
+                .collect::<Vec<_>>();
+            for _ in 0..3 {
+                let access_unit = encoder
+                    .encode_transport_f32(&pcm)
+                    .unwrap_or_else(|error| panic!("AOT {aot}, mode {channel_mode}: {error:?}"));
+                assert!(!access_unit.is_empty());
+            }
+        }
+    }
+
+    #[test]
     fn configured_low_delay_encoder_starts_with_fdk_cbr_reservoir() {
         let mut parameters = configured(23, 1, 48_000);
         parameters
@@ -5122,6 +5156,71 @@ mod tests {
                 assert_eq!(resolved.channel_order, order);
                 let mut encoder = ConfiguredPureRustEncoder::from_parameters(&parameters).unwrap();
                 assert_eq!(encoder.encode_interleaved_f32(&ordered).unwrap(), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn aac_lc_five_one_keeps_every_distinct_input_channel_audible() {
+        const CHANNELS: usize = 6;
+        for order in [0, 1, 2] {
+            let mut parameters = configured(2, 6, 48_000);
+            parameters
+                .set_parameter(EncoderParameter::Bitrate, 288_000)
+                .unwrap();
+            parameters
+                .set_parameter(EncoderParameter::TransportMux, 0)
+                .unwrap();
+            parameters
+                .set_parameter(EncoderParameter::ChannelOrder, order)
+                .unwrap();
+            let mut encoder = ConfiguredPureRustEncoder::from_parameters(&parameters).unwrap();
+            let asc = backend_audio_specific_config(&encoder.config, &encoder.backend).unwrap();
+            let mut decoder = AacLcDecoder::from_audio_specific_config(&asc).unwrap();
+            let input_map = match encoder_channel_input_map(6, CHANNELS, order) {
+                map if map.is_empty() => (0..CHANNELS).collect::<Vec<_>>(),
+                map => map.to_vec(),
+            };
+            let mut energy = [0.0f64; CHANNELS];
+
+            for frame in 0..5 {
+                let mut input = vec![0.0; 1024 * CHANNELS];
+                for sample in 0..1024 {
+                    for canonical_channel in 0..CHANNELS {
+                        let position = frame * 1024 + sample;
+                        let value = (position as f32 * (0.019 + canonical_channel as f32 * 0.006))
+                            .sin()
+                            * (0.18 + canonical_channel as f32 * 0.035);
+                        input[sample * CHANNELS + input_map[canonical_channel]] = value;
+                    }
+                }
+                let access_unit = encoder.encode_interleaved_f32(&input).unwrap();
+                let decoded = decoder
+                    .decode_raw_data_block_multichannel_f32(&access_unit)
+                    .unwrap();
+                if frame >= 2 {
+                    for (channel_energy, samples) in energy.iter_mut().zip(decoded.channels) {
+                        *channel_energy += samples
+                            .iter()
+                            .map(|sample| f64::from(*sample) * f64::from(*sample))
+                            .sum::<f64>();
+                    }
+                }
+            }
+
+            for (channel, channel_energy) in energy.iter().copied().enumerate() {
+                assert!(
+                    channel_energy > 1.0e-6,
+                    "channel order {order}, channel {channel} was silent"
+                );
+            }
+            for (channel, pair) in energy.windows(2).enumerate() {
+                assert!(
+                    pair[1] > pair[0] * 1.1,
+                    "channel order {order} reordered channels {channel} and {}: {:?}",
+                    channel + 1,
+                    pair
+                );
             }
         }
     }
