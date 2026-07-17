@@ -17534,6 +17534,9 @@ mod tests {
             )
             .is_err());
         let mut decoder = AacLcDecoder::from_audio_specific_config(&config).unwrap();
+        let provisional = decoder.stream_info();
+        assert_eq!(provisional.num_channels, 1);
+        assert_eq!(provisional.flags & STREAM_FLAG_PS_PRESENT, 0);
         let decoded = decoder
             .decode_raw_data_block_multichannel_f32(&raw)
             .unwrap();
@@ -17545,6 +17548,12 @@ mod tests {
         assert_eq!(decoded.channels[0].len(), 2048);
         assert_eq!(decoded.channels[1].len(), 2048);
         assert!(decoded.channels[0].iter().all(|sample| sample.is_finite()));
+        let discovered = decoder.stream_info();
+        assert_eq!(discovered.num_channels, 2);
+        assert_eq!(
+            discovered.flags & STREAM_FLAG_PS_PRESENT,
+            STREAM_FLAG_PS_PRESENT
+        );
         let padded = AacLcDecoder::from_audio_specific_config(&config)
             .unwrap()
             .decode_raw_data_block_multichannel_f32(&padded_raw)
