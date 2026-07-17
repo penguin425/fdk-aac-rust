@@ -84,7 +84,10 @@ history. Detailed migration status is maintained in
 | [`crates/fdk-aac-sys/build-support`](crates/fdk-aac-sys/build-support) | Packaged reference-only capture hooks used by differential tests |
 | [`docs/UPSTREAM.md`](docs/UPSTREAM.md) | Upstream source and revision policy |
 | [`docs/RELEASING.md`](docs/RELEASING.md) | Versioning and automated release procedure |
+| [`docs/DECODER_DRAINING.md`](docs/DECODER_DRAINING.md) | Decoder delay, seeking, preroll, and end-of-stream draining |
+| [`docs/UPSTREAM_ISSUES.md`](docs/UPSTREAM_ISSUES.md) | Disposition of every open upstream issue |
 | [`docs/PORT_STATUS.md`](docs/PORT_STATUS.md) | Detailed Rust migration status |
+| [`docs/DRC.md`](docs/DRC.md) | DRC metadata, loudness targets, and decoder controls |
 | [`tools/update-upstream.sh`](tools/update-upstream.sh) | Validated upstream revision update tool |
 
 No `.c`, `.cc`, `.cpp`, or C/C++ header is tracked. With the `ffi` feature,

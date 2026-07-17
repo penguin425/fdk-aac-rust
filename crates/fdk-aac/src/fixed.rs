@@ -76,6 +76,9 @@ pub fn scale_values_saturate_from(dst: &mut [FixpDbl], src: &[FixpDbl], scalefac
 }
 
 pub fn sgl_to_dbl(value: FixpSgl) -> FixpDbl {
+    // Rust defines signed left shift as a two's-complement bit operation. This
+    // is intentionally not the undefined C operation reported upstream in
+    // mstorsjo/fdk-aac#152.
     (value as FixpDbl) << (DFRACT_BITS - FRACT_BITS)
 }
 
@@ -216,6 +219,8 @@ mod tests {
         assert_eq!(dbl_to_sgl(0x4000_1234), 0x4000);
         assert_eq!(pcm16_to_dbl(-0x4000), -0x4000_0000);
         assert_eq!(dbl_to_pcm16(-0x4000_1234), -0x4001);
+        assert_eq!(sgl_to_dbl(i16::MIN), i32::MIN);
+        assert_eq!(sgl_to_dbl(-1), -0x1_0000);
     }
 
     #[test]

@@ -201,13 +201,21 @@ mod ffi {
 
     pub struct Encoder {
         handle: sys::HANDLE_AACENCODER,
+        he_aac_v2_frame_samples: Option<usize>,
+        pending_he_aac_v2_input: Vec<i16>,
+        pending_he_aac_v2_metadata: Option<sys::AACENC_MetaData>,
     }
 
     impl Encoder {
         pub fn open(max_channels: u32) -> Result<Self, EncoderError> {
             let mut handle = ptr::null_mut();
             check_encoder(unsafe { sys::aacEncOpen(&mut handle, 0, max_channels) })?;
-            Ok(Self { handle })
+            Ok(Self {
+                handle,
+                he_aac_v2_frame_samples: None,
+                pending_he_aac_v2_input: Vec::new(),
+                pending_he_aac_v2_metadata: None,
+            })
         }
 
         pub fn configured(config: &EncoderConfig) -> Result<Self, EncoderError> {
@@ -231,7 +239,11 @@ mod ffi {
             param: sys::AACENC_PARAM,
             value: u32,
         ) -> Result<(), EncoderError> {
-            check_encoder(unsafe { sys::aacEncoder_SetParam(self.handle, param, value) })
+            check_encoder(unsafe { sys::aacEncoder_SetParam(self.handle, param, value) })?;
+            self.he_aac_v2_frame_samples = None;
+            self.pending_he_aac_v2_input.clear();
+            self.pending_he_aac_v2_metadata = None;
+            Ok(())
         }
 
         pub fn get_param(&self, param: sys::AACENC_PARAM) -> u32 {
@@ -247,7 +259,24 @@ mod ffi {
                     ptr::null(),
                     ptr::null_mut(),
                 )
-            })
+            })?;
+            self.pending_he_aac_v2_input.clear();
+            self.pending_he_aac_v2_metadata = None;
+            self.he_aac_v2_frame_samples = if self.get_param(sys::AACENC_AOT) == sys::AOT_PS as u32
+            {
+                let info = self.info()?;
+                Some(
+                    usize::try_from(
+                        info.frame_length
+                            .checked_mul(info.input_channels)
+                            .ok_or_else(invalid_encoder_input)?,
+                    )
+                    .map_err(|_| invalid_encoder_input())?,
+                )
+            } else {
+                None
+            };
+            Ok(())
         }
 
         pub fn info(&self) -> Result<EncoderInfo, EncoderError> {
@@ -292,6 +321,42 @@ mod ffi {
         }
 
         pub fn encode_interleaved_i16_with_ancillary_and_metadata(
+            &mut self,
+            input: &[i16],
+            ancillary: &[u8],
+            metadata: Option<&sys::AACENC_MetaData>,
+            output: &mut [u8],
+        ) -> Result<(usize, usize), EncoderError> {
+            // Upstream issue #129 documents an out-of-bounds deinterleave when
+            // HE-AACv2 receives less than one complete input frame. Keep the
+            // safe wrapper's incremental-input behavior, but do not expose the
+            // vulnerable C path to a short slice.
+            if let Some(frame_samples) = self.he_aac_v2_frame_samples {
+                self.pending_he_aac_v2_input.extend_from_slice(input);
+                if self.pending_he_aac_v2_input.len() < frame_samples {
+                    if let Some(metadata) = metadata {
+                        self.pending_he_aac_v2_metadata = Some(*metadata);
+                    }
+                    return Ok((0, 0));
+                }
+                let complete_frame = self
+                    .pending_he_aac_v2_input
+                    .drain(..frame_samples)
+                    .collect::<Vec<_>>();
+                let pending_metadata = self.pending_he_aac_v2_metadata.take();
+                return self.encode_complete_interleaved_i16_with_ancillary_and_metadata(
+                    &complete_frame,
+                    ancillary,
+                    metadata.or(pending_metadata.as_ref()),
+                    output,
+                );
+            }
+            self.encode_complete_interleaved_i16_with_ancillary_and_metadata(
+                input, ancillary, metadata, output,
+            )
+        }
+
+        fn encode_complete_interleaved_i16_with_ancillary_and_metadata(
             &mut self,
             input: &[i16],
             ancillary: &[u8],
@@ -575,6 +640,32 @@ mod ffi {
                 Err(EncoderError(sys::AACENC_ENCODE_ERROR))
             );
             assert_eq!(checked_encoder_count(32, 32), Ok(32));
+        }
+
+        #[test]
+        fn ffi_he_aac_v2_buffers_short_input_before_calling_c() {
+            let mut config = EncoderConfig::aac_lc_stereo(48_000, 32_000);
+            config.audio_object_type = AudioObjectType::HeAacV2;
+            config.transport = TransportType::Raw;
+            let mut encoder = Encoder::configured(&config).unwrap();
+            let info = encoder.info().unwrap();
+            let frame_samples = usize::try_from(info.frame_length * info.input_channels).unwrap();
+            assert_eq!(encoder.he_aac_v2_frame_samples, Some(frame_samples));
+
+            let mut output = vec![0; info.max_output_bytes as usize];
+            let split = frame_samples / 3;
+            assert_eq!(
+                encoder
+                    .encode_interleaved_i16(&vec![0; split], &mut output)
+                    .unwrap(),
+                0
+            );
+            assert_eq!(encoder.pending_he_aac_v2_input.len(), split);
+
+            encoder
+                .encode_interleaved_i16(&vec![0; frame_samples - split], &mut output)
+                .unwrap();
+            assert!(encoder.pending_he_aac_v2_input.is_empty());
         }
         use crate::spectral::decode_spectral_tuple;
         use crate::transport::{DecodeFrameFlags, DecoderParameter, PureRustTransportDecoder};
