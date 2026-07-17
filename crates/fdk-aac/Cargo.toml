@@ -4,8 +4,10 @@ version.workspace = true
 edition.workspace = true
 license-file = "../../NOTICE"
 readme = "../../README.md"
+repository.workspace = true
 description = "Third-party Rust port of the Fraunhofer FDK AAC Codec Library for Android"
 documentation = "https://docs.rs/fdk-aac-rust"
+publish = ["crates-io"]
 keywords = ["aac", "audio", "codec", "decoder", "encoder"]
 categories = ["multimedia::audio", "encoding"]
 
