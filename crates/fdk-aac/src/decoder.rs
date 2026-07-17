@@ -2760,7 +2760,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let decoded = self.decode_raw_data_block_f32(frame.payload)?;
@@ -2868,7 +2870,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let decoded = self.decode_raw_data_block_f32_strict(frame.payload)?;
@@ -2965,7 +2969,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let pcm = self.decode_raw_data_block_fixed_interleaved_i16(frame.payload)?;
@@ -2998,7 +3004,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let pcm = self.decode_raw_data_block_fixed_interleaved_i16_strict(frame.payload)?;
@@ -4577,7 +4585,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let decoded = self.decode_raw_data_block_multichannel_f32(frame.payload)?;
@@ -4610,7 +4620,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let decoded = self.decode_raw_data_block_multichannel_f32_strict(frame.payload)?;
@@ -4643,7 +4655,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let pcm = self.decode_raw_data_block_multichannel_fixed_interleaved_i16(frame.payload)?;
@@ -4676,7 +4690,9 @@ impl AacLcDecoder {
                 frame.header.number_of_raw_data_blocks_in_frame,
             ));
         }
-        if frame.header.sampling_frequency_index != self.sampling_frequency_index {
+        if frame.header.sampling_frequency_index != self.sampling_frequency_index
+            || frame.header.channel_configuration != self.channel_configuration
+        {
             return Err(DecodeError::AdtsConfigChanged);
         }
         let pcm =
@@ -9839,7 +9855,9 @@ fn validate_adts_aac_lc_configuration(
     if header.profile + 1 != decoder.audio_object_type {
         return Err(DecodeError::UnsupportedAudioObjectType(header.profile + 1));
     }
-    if header.sampling_frequency_index != decoder.sampling_frequency_index {
+    if header.sampling_frequency_index != decoder.sampling_frequency_index
+        || header.channel_configuration != decoder.channel_configuration
+    {
         return Err(DecodeError::AdtsConfigChanged);
     }
     Ok(())
@@ -15189,6 +15207,7 @@ mod tests {
         multi_block_header.number_of_raw_data_blocks_in_frame = 1;
         let multiple_blocks = make_frame(multi_block_header);
         let changed_frequency = make_frame(AdtsHeader::aac_lc(48_000, 1, payload.len()).unwrap());
+        let changed_channels = make_frame(AdtsHeader::aac_lc(44_100, 2, payload.len()).unwrap());
 
         macro_rules! assert_all_facades {
             ($frame:expr, $expected:expr) => {{
@@ -15246,6 +15265,7 @@ mod tests {
             DecodeError::UnsupportedRawBlocksInAdtsFrame(1)
         );
         assert_all_facades!(&changed_frequency, DecodeError::AdtsConfigChanged);
+        assert_all_facades!(&changed_channels, DecodeError::AdtsConfigChanged);
     }
 
     #[test]
