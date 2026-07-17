@@ -1443,6 +1443,8 @@ impl PureRustTransportDecoder {
             self.pending_energy_f32_losses = 0;
             self.pending_energy_i16_losses = 0;
             self.decoder.signal_interruption()?;
+            self.concealment_delay.reset();
+            self.pcm_limiter.reset();
         }
         if flags.contains(DecodeFrameFlags::CLEAR_HISTORY) {
             self.decoder.clear_history()?;
@@ -3302,6 +3304,43 @@ mod tests {
             .unwrap();
         assert_eq!(decoder.stream_info().num_lost_access_units, 0);
         assert_eq!(decoder.stream_info().num_total_access_units, 3);
+    }
+
+    #[test]
+    fn interruption_discards_pre_seek_overlap_and_matches_a_fresh_decoder() {
+        let input = (0..1024)
+            .map(|index| {
+                (2.0 * std::f32::consts::PI * 997.0 * index as f32 / 44_100.0).sin() * 12_000.0
+            })
+            .collect::<Vec<_>>();
+        let mut encoder = PureRustAacLcMonoEncoder::new(4, 4000, 2000).unwrap();
+        let access_unit = encoder.encode_raw_data_block(&input).unwrap();
+        let asc = AudioSpecificConfig::aac_lc(44_100, 1).unwrap();
+
+        let mut continuous = PureRustTransportDecoder::from_audio_specific_config(&asc).unwrap();
+        continuous
+            .set_parameter(DecoderParameter::PcmLimiterEnable, -2)
+            .unwrap();
+        continuous.decode_raw_interleaved_f32(&access_unit).unwrap();
+        let without_interruption = continuous.decode_raw_interleaved_f32(&access_unit).unwrap();
+
+        let mut seeked = PureRustTransportDecoder::from_audio_specific_config(&asc).unwrap();
+        seeked
+            .set_parameter(DecoderParameter::PcmLimiterEnable, -2)
+            .unwrap();
+        seeked.decode_raw_interleaved_f32(&access_unit).unwrap();
+        let after_interruption = seeked
+            .decode_interleaved_f32_with_flags(&access_unit, DecodeFrameFlags::INTERRUPTION)
+            .unwrap();
+
+        let mut fresh = PureRustTransportDecoder::from_audio_specific_config(&asc).unwrap();
+        fresh
+            .set_parameter(DecoderParameter::PcmLimiterEnable, -2)
+            .unwrap();
+        let fresh_output = fresh.decode_raw_interleaved_f32(&access_unit).unwrap();
+
+        assert_eq!(after_interruption, fresh_output);
+        assert_ne!(without_interruption, fresh_output);
     }
 
     #[test]
