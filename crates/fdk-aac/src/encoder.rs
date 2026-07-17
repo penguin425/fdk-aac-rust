@@ -3606,6 +3606,40 @@ mod tests {
     }
 
     #[test]
+    fn encoder_profiles_accept_full_scale_alternating_pcm_without_overflow() {
+        for (aot, channel_mode, bitrate) in [(2, 1, 80_000), (5, 1, 64_000), (29, 2, 64_000)] {
+            let mut parameters = configured(aot, channel_mode, 48_000);
+            parameters
+                .set_parameter(EncoderParameter::Bitrate, bitrate)
+                .unwrap();
+            parameters
+                .set_parameter(EncoderParameter::BitrateMode, 5)
+                .unwrap();
+            parameters
+                .set_parameter(EncoderParameter::TransportMux, 0)
+                .unwrap();
+            let mut encoder = ConfiguredPureRustEncoder::from_parameters(&parameters).unwrap();
+            let sample_count = encoder.input_samples_per_channel()
+                * usize::try_from(encoder.config().channels).unwrap();
+            let pcm = (0..sample_count)
+                .map(|sample| {
+                    if sample & 1 == 0 {
+                        i16::MIN as f32
+                    } else {
+                        i16::MAX as f32
+                    }
+                })
+                .collect::<Vec<_>>();
+            for _ in 0..3 {
+                let access_unit = encoder
+                    .encode_transport_f32(&pcm)
+                    .unwrap_or_else(|error| panic!("AOT {aot}, mode {channel_mode}: {error:?}"));
+                assert!(!access_unit.is_empty());
+            }
+        }
+    }
+
+    #[test]
     fn configured_low_delay_encoder_starts_with_fdk_cbr_reservoir() {
         let mut parameters = configured(23, 1, 48_000);
         parameters

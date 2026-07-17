@@ -85,6 +85,7 @@ history. Detailed migration status is maintained in
 | [`docs/UPSTREAM.md`](docs/UPSTREAM.md) | Upstream source and revision policy |
 | [`docs/RELEASING.md`](docs/RELEASING.md) | Versioning and automated release procedure |
 | [`docs/DECODER_DRAINING.md`](docs/DECODER_DRAINING.md) | Decoder delay, seeking, preroll, and end-of-stream draining |
+| [`docs/UPSTREAM_ISSUES.md`](docs/UPSTREAM_ISSUES.md) | Disposition of every open upstream issue |
 | [`docs/PORT_STATUS.md`](docs/PORT_STATUS.md) | Detailed Rust migration status |
 | [`tools/update-upstream.sh`](tools/update-upstream.sh) | Validated upstream revision update tool |
 
