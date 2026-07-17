@@ -684,7 +684,6 @@ impl UsacStereoDecoder {
                 independent,
             )
             .map_err(|_| UsacDecodeError::UnsupportedConfiguration)?;
-            let _common_tw = reader.read_bool()?;
             let (tns_present, shared_tns) = if tns_active && reader.read_bool()? {
                 let _tns_on_lr = reader.read_bool()?;
                 let short = left_ics.window_sequence == UsacWindowSequence::EightShort;
@@ -730,7 +729,6 @@ impl UsacStereoDecoder {
             }
             (left, right, Some(stereo))
         } else {
-            let _common_tw = reader.read_bool()?;
             let tns_present = read_individual_cpe_tns_flags(reader, tns_active, false)?;
             let left_start = reader.bits_read();
             let left_side =
@@ -1377,7 +1375,6 @@ mod tests {
             bits.write_bool(false); // right FD core mode
             bits.write_bool(false); // TNS inactive
             bits.write_bool(false); // individual windows
-            bits.write_bool(false); // common_tw
             write_empty_individual_fd(&mut bits, false);
             write_empty_individual_fd(&mut bits, false);
         }
@@ -1483,7 +1480,6 @@ mod tests {
         bits.write_bool(false); // right FD
         bits.write_bool(false); // TNS inactive
         bits.write_bool(false); // individual windows
-        bits.write_bool(false); // common_tw inactive
         write_empty_individual_fd(&mut bits, false);
         write_empty_individual_fd(&mut bits, false);
         bits.write(0, 2); // default CLD
@@ -1707,7 +1703,6 @@ mod tests {
         bits.write_bool(false); // right FD
         bits.write_bool(false); // TNS inactive
         bits.write_bool(false); // individual windows
-        bits.write_bool(false); // common_tw inactive
         write_empty_individual_fd(&mut bits, false);
         write_empty_individual_fd(&mut bits, false);
 
@@ -1789,7 +1784,6 @@ mod tests {
         bits.write_bool(false);
         bits.write_bool(false); // tns inactive
         bits.write_bool(false); // individual windows
-        bits.write_bool(false); // common_tw
         write_empty_individual_fd(&mut bits, true);
         write_empty_individual_fd(&mut bits, true);
         let channels = UsacStereoDecoder::new(stereo_config(true))
@@ -1832,7 +1826,6 @@ mod tests {
         bits.write_bool(false); // distinct right max_sfb
         bits.write(0, 4); // right max_sfb
         bits.write(0, 2); // no M/S
-        bits.write_bool(false); // common_tw
         for _ in 0..2 {
             bits.write(0, 8); // global gain
             bits.write_bool(false); // no FAC
@@ -1860,7 +1853,6 @@ mod tests {
         bits.write_bool(true); // all bands (there are zero)
         bits.write_bool(false); // mid predicts side
         bits.write_bool(false); // real coefficients
-        bits.write_bool(false); // common_tw
         for _ in 0..2 {
             bits.write(0, 8);
             bits.write_bool(false);
@@ -1922,7 +1914,6 @@ mod tests {
         let mut bits = common_prefix();
         bits.write(0, 6); // right max_sfb
         bits.write(0, 2); // no M/S stereo
-        bits.write_bool(false); // common_tw
         let bit_len = bits.bits_written();
         let bytes = bits.finish();
         let mut decoder = UsacStereoDecoder::new(stereo_config(false)).unwrap();
@@ -1938,7 +1929,6 @@ mod tests {
         let mut bits = common_prefix();
         bits.write(0, 6); // right max_sfb
         bits.write(0, 2); // no M/S stereo
-        bits.write_bool(false); // common_tw
         bits.write(0, 8); // complete left global gain
         bits.write_bool(false); // no left FAC
         let bit_len = bits.bits_written();
@@ -2058,7 +2048,6 @@ mod tests {
         bits.write(0, 6); // max_sfb=0
         bits.write_bool(true); // common max_sfb
         bits.write(0, 2); // no M/S
-        bits.write_bool(false); // common_tw
         for _ in 0..2 {
             bits.write(0, 8); // global gain
             bits.write_bool(false); // no FAC; no SF/spectral bits for max_sfb=0
@@ -2092,7 +2081,6 @@ mod tests {
         bits.write(0, 6);
         bits.write_bool(true);
         bits.write(0, 2);
-        bits.write_bool(false); // common_tw
         bits.write_bool(true); // common_tns
         bits.write_bool(false); // tns_on_lr
         bits.write(0, 2); // zero long-window TNS filters
@@ -2118,7 +2106,6 @@ mod tests {
         bits.write(0, 6);
         bits.write_bool(true);
         bits.write(0, 2);
-        bits.write_bool(false); // common_tw
         bits.write_bool(false); // separate TNS payloads
         bits.write_bool(false); // tns_on_lr
         bits.write_bool(true); // TNS present on both channels

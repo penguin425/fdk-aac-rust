@@ -12581,7 +12581,6 @@ mod tests {
         access_unit.write_bool(false); // right FD
         access_unit.write_bool(false); // TNS inactive
         access_unit.write_bool(false); // separate windows
-        access_unit.write_bool(false); // common_tw
         for _ in 0..2 {
             access_unit.write(0, 8); // global gain
             access_unit.write(0, 2); // ONLY_LONG
@@ -12843,7 +12842,6 @@ mod tests {
         stereo_payload.write_bool(false); // right FD
         stereo_payload.write_bool(false); // TNS inactive
         stereo_payload.write_bool(false); // separate windows
-        stereo_payload.write_bool(false); // common_tw
         for _ in 0..2 {
             stereo_payload.write(0, 8); // global gain
             stereo_payload.write(0, 2); // ONLY_LONG
@@ -13029,6 +13027,52 @@ mod tests {
         assert_eq!(info.num_channels, 6);
         assert_eq!(info.aac_num_channels, 6);
         assert_eq!(info.flags & STREAM_FLAG_USAC, STREAM_FLAG_USAC);
+    }
+
+    #[test]
+    fn decodes_real_exhale_1_2_2_5_1_access_units_continuously() {
+        let asc = AudioSpecificConfig::parse(&[
+            0xf9, 0x46, 0x03, 0x26, 0x4c, 0xc0, 0x15, 0x5a, 0x14, 0x80, 0x08, 0x00, 0x28, 0x7e,
+            0x11, 0x00, 0x2e, 0x00, 0x00,
+        ])
+        .unwrap();
+        let bytes = include_str!("testdata/exhale-1.2.2-5.1-access-units.hex")
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .flat_map(|line| line.as_bytes().chunks_exact(2))
+            .map(|pair| {
+                let digit = |value: u8| match value {
+                    b'0'..=b'9' => value - b'0',
+                    b'a'..=b'f' => value - b'a' + 10,
+                    _ => panic!("invalid fixture hex digit"),
+                };
+                digit(pair[0]) << 4 | digit(pair[1])
+            })
+            .collect::<Vec<_>>();
+        let packet_sizes = [
+            0x35e, 0xc5, 0xb7, 0xb1, 0xb8, 0xb8, 0xbb, 0xb9, 0xb6, 0xb5, 0x131, 0x2ac,
+        ];
+        assert_eq!(bytes.len(), packet_sizes.iter().sum());
+
+        let mut decoder = AacLcDecoder::from_audio_specific_config(&asc).unwrap();
+        let mut offset = 0;
+        let mut channel_energy = [0.0f64; 6];
+        for size in packet_sizes {
+            let channels = decoder
+                .decode_usac_access_unit_multichannel_f32(&bytes[offset..offset + size])
+                .unwrap();
+            assert_eq!(channels.len(), 6);
+            assert!(channels.iter().all(|channel| channel.len() == 1024));
+            for (energy, channel) in channel_energy.iter_mut().zip(channels) {
+                assert!(channel.iter().all(|sample| sample.is_finite()));
+                *energy += channel
+                    .iter()
+                    .map(|sample| f64::from(*sample) * f64::from(*sample))
+                    .sum::<f64>();
+            }
+            offset += size;
+        }
+        assert!(channel_energy.iter().all(|energy| *energy > 0.0));
     }
 
     #[test]
