@@ -7,7 +7,9 @@ tag. The `rust-` prefix distinguishes this port from the inherited upstream
 Distribution is adapted for Rust: a manually dispatched GitHub Actions workflow
 publishes both source crates to crates.io, creates an annotated version tag,
 and creates a GitHub Release containing the complete repository source archive,
-the two `.crate` source archives, and their SHA-256 checksums. Compiled binary
+the two `.crate` source archives, CycloneDX SBOMs, and their SHA-256 checksums.
+GitHub records build-provenance attestations for every checksummed artifact.
+Compiled binary
 artifacts are intentionally excluded; adding any requires satisfying the separate
 [`DISTRIBUTION.md`](DISTRIBUTION.md) binary-distribution checklist.
 
@@ -68,8 +70,13 @@ Manually dispatching `.github/workflows/release.yml` from `main`:
    publishes `fdk-aac-rust`;
 7. creates a complete repository source archive and verifies that all three
    source archives contain the required `NOTICE` and `README.md`;
-8. generates SHA-256 checksums and creates or updates the GitHub Release with
-   the repository archive, both `.crate` archives, and the checksum file.
+8. generates CycloneDX 1.5 SBOMs for both crates and a verified SHA-256 manifest;
+9. creates GitHub Artifact Attestations for every entry in that manifest;
+10. creates or updates the GitHub Release with the repository archive, both
+    `.crate` archives, both SBOMs, and the checksum file;
+11. downloads both crates from crates.io and verifies byte identity, SHA-256,
+    and the embedded Git commit against the tag and workflow commit;
+12. waits for successful documentation pages for both crates on docs.rs.
 
 The workflow never moves an existing Git tag. A rerun accepts it only when it is
 annotated and still points to the exact tested commit. If publication fails
@@ -77,6 +84,12 @@ after tag creation, rerun the same version from that `main` commit; do not delet
 and recreate the tag with different source. The crates.io publication step also
 checks for existing versions before uploading, but it cannot replace a version
 whose source differs.
+
+The sys crate's build script deliberately skips native compilation when
+`DOCS_RS` is set because docs.rs builds offline and Rust API declarations do
+not require a linked reference library. The safe crate is documented with
+default features disabled, so its primary Pure Rust API remains available even
+when the reference C/C++ source cannot be fetched.
 
 ## Versioning policy
 

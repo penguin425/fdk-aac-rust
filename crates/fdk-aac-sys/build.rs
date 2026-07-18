@@ -4,6 +4,13 @@ const UPSTREAM_URL: &str = "https://github.com/mstorsjo/fdk-aac.git";
 const DEFAULT_UPSTREAM_REVISION: &str = "d8e6b1a3aa606c450241632b64b703f21ea31ce3";
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=DOCS_RS");
+    if env::var_os("DOCS_RS").is_some() {
+        // docs.rs builds crates offline. The declarations in this crate do not
+        // need a native library until a final binary is linked, so rustdoc must
+        // not fetch and compile the reference implementation.
+        return;
+    }
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let build_support = manifest_dir.join("build-support");
     println!("cargo:rerun-if-env-changed=FDK_AAC_SOURCE_DIR");
