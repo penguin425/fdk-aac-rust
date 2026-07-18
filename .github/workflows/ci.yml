@@ -16,8 +16,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Test minimum supported Rust version
         run: |
-          rustup toolchain install 1.80.0 --profile minimal --no-self-update
-          rustup run 1.80.0 cargo test -p fdk-aac-rust --no-default-features --locked
+          rustup toolchain install 1.87.0 --profile minimal --no-self-update
+          CARGO_TARGET_DIR=target/msrv rustup run 1.87.0 cargo test -p fdk-aac-rust --no-default-features --locked
       - name: Check public API compatibility with 0.2.1
         uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2
         with:

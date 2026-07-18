@@ -1,6 +1,6 @@
 # Rust API and FFI compatibility
 
-The minimum supported Rust version (MSRV) is **1.80.0**. CI compiles and tests
+The minimum supported Rust version (MSRV) is **1.87.0**. CI compiles and tests
 the Pure Rust crate with that exact toolchain. Raising the MSRV is a documented
 compatibility change and must not happen accidentally through new syntax or
 standard-library APIs.

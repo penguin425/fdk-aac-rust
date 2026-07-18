@@ -8,6 +8,6 @@ resolver = "2"
 [workspace.package]
 version = "0.2.1"
 edition = "2021"
-rust-version = "1.80.0"
+rust-version = "1.87.0"
 license-file = "NOTICE"
 repository = "https://github.com/penguin425/fdk-aac-rust"
