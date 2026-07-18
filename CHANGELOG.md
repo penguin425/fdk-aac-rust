@@ -6,6 +6,8 @@ reinterpret the version numbers of the original C/C++ fdk-aac project.
 
 ## Unreleased
 
+## 0.2.2 - 2026-07-18
+
 - Added Pure Rust CI on Linux x86-64, Windows MSVC, macOS ARM64, Linux ARM64,
   and musl while retaining C/C++ differential tests on Linux x86-64.
 - Declared Rust 1.87 as the MSRV and added MSRV tests, crates.io-based SemVer
