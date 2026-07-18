@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "benchmark": "aac_lc_mono_decode",
+  "minimum_median_realtime_factor": 5.0,
+  "maximum_median_first_frame_microseconds": 1000000,
+  "maximum_peak_rss_kib": 524288,
+  "maximum_binary_bytes": 52428800
+}
