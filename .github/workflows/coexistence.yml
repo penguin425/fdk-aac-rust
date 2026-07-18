@@ -1,0 +1,30 @@
+name: Fraunhofer library coexistence
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/coexistence.yml"
+      - "api/mpeghdec-r4.0.0-collisions.txt"
+      - "crates/fdk-aac-sys/**"
+      - "tools/test-fraunhofer-coexistence.sh"
+  schedule:
+    - cron: "41 3 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-link:
+    name: fdk-aac + mpeghdec static link
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Check required native tools
+        run: |
+          cmake --version
+          c++ --version
+          objcopy --version
+      - name: Audit, namespace, link, and execute
+        run: ./tools/test-fraunhofer-coexistence.sh
