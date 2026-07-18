@@ -1,0 +1,63 @@
+name: Continuous fuzzing
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fuzz.yml"
+      - "Cargo.toml"
+      - "fuzz/**"
+      - "crates/fdk-aac/**"
+      - "crates/fdk-aac-sys/**"
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: adts
+            feature_args: ""
+          - target: loas_latm
+            feature_args: ""
+          - target: raw_access_unit
+            feature_args: ""
+          - target: asc
+            feature_args: ""
+          - target: usac_xhe_aac
+            feature_args: ""
+          - target: drc
+            feature_args: ""
+          - target: encoder_config
+            feature_args: ""
+          - target: ffi_boundary
+            feature_args: "--features ffi"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install fuzz toolchain
+        run: |
+          rustup toolchain install nightly --profile minimal --component llvm-tools-preview --no-self-update
+          rustup default nightly
+          cargo install cargo-fuzz --version 0.13.2 --locked
+      - name: Compile fuzz target
+        if: github.event_name == 'pull_request'
+        run: cargo fuzz build ${{ matrix.target }} ${{ matrix.feature_args }}
+      - name: Run bounded fuzz campaign
+        if: github.event_name != 'pull_request'
+        run: cargo fuzz run ${{ matrix.target }} ${{ matrix.feature_args }} -- -max_total_time=300 -timeout=10
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore
+          retention-days: 30

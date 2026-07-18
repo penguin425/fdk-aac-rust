@@ -1,0 +1,72 @@
+[package]
+name = "fdk-aac-rust-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[features]
+ffi = ["fdk-aac-rust/ffi"]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+fdk-aac-rust = { path = "../crates/fdk-aac", default-features = false }
+
+[[bin]]
+name = "adts"
+path = "fuzz_targets/adts.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "loas_latm"
+path = "fuzz_targets/loas_latm.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "raw_access_unit"
+path = "fuzz_targets/raw_access_unit.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "asc"
+path = "fuzz_targets/asc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "usac_xhe_aac"
+path = "fuzz_targets/usac_xhe_aac.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "drc"
+path = "fuzz_targets/drc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encoder_config"
+path = "fuzz_targets/encoder_config.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ffi_boundary"
+path = "fuzz_targets/ffi_boundary.rs"
+test = false
+doc = false
+bench = false
+required-features = ["ffi"]

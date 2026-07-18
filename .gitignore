@@ -1,4 +1,7 @@
 target/
+fuzz/artifacts/
+fuzz/corpus/
+fuzz/coverage/
 *.profraw
 *.profdata
 .vscode/

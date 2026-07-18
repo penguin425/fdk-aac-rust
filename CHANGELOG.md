@@ -10,6 +10,8 @@ reinterpret the version numbers of the original C/C++ fdk-aac project.
   and musl while retaining C/C++ differential tests on Linux x86-64.
 - Declared Rust 1.87 as the MSRV and added MSRV tests, crates.io-based SemVer
   API checks, and an explicit sys FFI declaration snapshot gate.
+- Added daily libFuzzer campaigns for ADTS, LOAS/LATM, raw access units, ASC,
+  USAC/xHE-AAC, DRC, encoder configuration, and the legacy FFI boundary.
 
 ## 0.2.1 - 2026-07-18
 
