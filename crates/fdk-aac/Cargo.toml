@@ -2,6 +2,7 @@
 name = "fdk-aac-rust"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license-file = "../../NOTICE"
 readme = "../../README.md"
 repository.workspace = true
