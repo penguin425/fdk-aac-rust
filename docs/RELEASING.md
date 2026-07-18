@@ -5,7 +5,8 @@ changelog commit, validating it, and creating an annotated `rust-vX.Y.Z` Git
 tag. The `rust-` prefix distinguishes this port from the inherited upstream
 `v0.1.x` and `v2.0.x` tags.
 Distribution is adapted for Rust: a manually dispatched GitHub Actions workflow
-publishes both source crates to crates.io, creates an annotated version tag,
+publishes both source crates to crates.io, verifies their exact contents and
+embedded commit, creates an annotated version tag,
 and creates a GitHub Release containing the complete repository source archive,
 the two `.crate` source archives, CycloneDX SBOMs, and their SHA-256 checksums.
 GitHub records build-provenance attestations for every checksummed artifact.
@@ -23,6 +24,9 @@ artifacts are intentionally excluded; adding any requires satisfying the separat
 3. Create a crates.io API token restricted to `publish-new` and
    `publish-update` for `fdk-aac-rust-sys` and `fdk-aac-rust`, then store it as
    the repository secret `CARGO_REGISTRY_TOKEN`.
+4. After the registry-first workflow has been merged and validated, enable
+   GitHub Immutable Releases. The workflow supplies every asset in the initial
+   `gh release create` call and never relies on later asset replacement.
 
 The two crates always use the same version. The workflow publishes the sys
 crate first, waits for that exact version to appear in the crates.io index, and
@@ -50,8 +54,8 @@ versions are permanent and cannot be overwritten.
    to `main` through a pull request.
 9. In GitHub Actions, open the **Release** workflow, select **Run workflow** on
    `main`, and enter `X.Y.Z` without the `rust-v` prefix. The workflow validates
-   the version, creates the annotated `rust-vX.Y.Z` tag, publishes both crates
-   to crates.io, and publishes the GitHub Release. Do not create or move the
+   the version, publishes and verifies both crates, creates the annotated
+   `rust-vX.Y.Z` tag, and publishes the GitHub Release. Do not create or move the
    tag manually and do not publish either crate separately.
 
 ## Automated publication
@@ -65,25 +69,26 @@ Manually dispatching `.github/workflows/release.yml` from `main`:
    differential suite;
 4. verifies the `fdk-aac-rust-sys` source package and the main crate's source
    file set;
-5. creates an annotated `rust-vX.Y.Z` tag at the tested `main` commit;
-6. publishes `fdk-aac-rust-sys`, waits for index propagation, and then
+5. publishes `fdk-aac-rust-sys`, waits for index propagation, and then
    publishes `fdk-aac-rust`;
+6. downloads both canonical crates and verifies byte identity and the embedded
+   Git commit before creating any Git reference;
 7. creates a complete repository source archive and verifies that all three
    source archives contain the required `NOTICE` and `README.md`;
 8. generates CycloneDX 1.5 SBOMs for both crates and a verified SHA-256 manifest;
 9. creates GitHub Artifact Attestations for every entry in that manifest;
-10. creates or updates the GitHub Release with the repository archive, both
+10. creates an annotated `rust-vX.Y.Z` tag at the tested `main` commit;
+11. atomically creates the GitHub Release with the repository archive, both
     `.crate` archives, both SBOMs, and the checksum file;
-11. downloads both crates from crates.io and verifies byte identity, SHA-256,
-    and the embedded Git commit against the tag and workflow commit;
-12. waits for successful documentation pages for both crates on docs.rs.
+12. verifies the tag, Release, and crates again, then waits for successful
+    documentation pages for both crates on docs.rs.
 
-The workflow never moves an existing Git tag. A rerun accepts it only when it is
-annotated and still points to the exact tested commit. If publication fails
-after tag creation, rerun the same version from that `main` commit; do not delete
-and recreate the tag with different source. The crates.io publication step also
-checks for existing versions before uploading, but it cannot replace a version
-whose source differs.
+The workflow never moves an existing Git tag or overwrites a GitHub Release
+asset. A rerun accepts a tag only when it is annotated and still points to the
+exact tested commit. It accepts an existing Release only when its complete asset
+set is byte-identical to the locally reproduced set. The crates.io publication
+step checks for existing versions before uploading, but it cannot replace a
+version whose source differs.
 
 The sys crate's build script deliberately skips native compilation when
 `DOCS_RS` is set because docs.rs builds offline and Rust API declarations do

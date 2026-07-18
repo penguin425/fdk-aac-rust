@@ -9,7 +9,11 @@ on:
       - "crates/**/Cargo.toml"
       - "crates/fdk-aac-sys/build.rs"
       - "tools/release-check.sh"
+      - "tools/publish-crates.sh"
+      - "tools/check-release-order.sh"
+      - "tools/verify-published-crates.sh"
       - "tools/verify-published-release.sh"
+      - "tools/create-or-verify-release.sh"
   workflow_dispatch:
     inputs:
       version:
@@ -42,6 +46,9 @@ jobs:
       - name: Validate release verifier and SBOM generation
         run: |
           sh -n tools/verify-published-release.sh
+          sh -n tools/verify-published-crates.sh
+          sh -n tools/create-or-verify-release.sh
+          ./tools/check-release-order.sh
           cargo cyclonedx --format json --all --target all --spec-version 1.5
           test -s crates/fdk-aac-sys/fdk-aac-rust-sys.cdx.json
           test -s crates/fdk-aac/fdk-aac-rust.cdx.json
@@ -78,26 +85,15 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: ./tools/release-check.sh "rust-v$VERSION"
-      - name: Create annotated version tag
-        env:
-          VERSION: ${{ inputs.version }}
-        run: |
-          set -eu
-          tag="rust-v$VERSION"
-          if git rev-parse "refs/tags/$tag" >/dev/null 2>&1; then
-            test "$(git cat-file -t "refs/tags/$tag")" = tag
-            test "$(git rev-list -n 1 "$tag")" = "$GITHUB_SHA"
-          else
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git tag -a "$tag" -m "fdk-aac Rust port $VERSION"
-            git push origin "refs/tags/$tag"
-          fi
       - name: Publish crates.io packages
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           VERSION: ${{ inputs.version }}
         run: ./tools/publish-crates.sh "$VERSION"
+      - name: Verify canonical crates before creating Git references
+        env:
+          VERSION: ${{ inputs.version }}
+        run: ./tools/verify-published-crates.sh "$VERSION" "$GITHUB_SHA"
       - name: Create source archive
         env:
           VERSION: ${{ inputs.version }}
@@ -146,30 +142,26 @@ jobs:
             found { print }
           ' CHANGELOG.md > RELEASE_NOTES.md
           test -s RELEASE_NOTES.md
-      - name: Create or update GitHub Release
+      - name: Create annotated version tag after registry publication
         env:
-          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
         run: |
           set -eu
           tag="rust-v$VERSION"
-          archive="fdk-aac-rust-$VERSION.tar.gz"
-          sys_crate="fdk-aac-rust-sys-$VERSION.crate"
-          rust_crate="fdk-aac-rust-$VERSION.crate"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" \
-              "$archive" "$sys_crate" "$rust_crate" \
-              fdk-aac-rust-sys.cdx.json fdk-aac-rust.cdx.json \
-              SHA256SUMS --clobber
+          if git rev-parse "refs/tags/$tag" >/dev/null 2>&1; then
+            test "$(git cat-file -t "refs/tags/$tag")" = tag
+            test "$(git rev-list -n 1 "$tag")" = "$GITHUB_SHA"
           else
-            gh release create "$tag" \
-              "$archive" "$sys_crate" "$rust_crate" \
-              fdk-aac-rust-sys.cdx.json fdk-aac-rust.cdx.json \
-              SHA256SUMS \
-              --verify-tag \
-              --title "fdk-aac Rust port $VERSION" \
-              --notes-file RELEASE_NOTES.md
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git tag -a "$tag" -m "fdk-aac Rust port $VERSION"
+            git push origin "refs/tags/$tag"
           fi
+      - name: Create or verify immutable-ready GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: ./tools/create-or-verify-release.sh "$VERSION" "$GITHUB_SHA"
       - name: Verify published commit and service availability
         env:
           GH_TOKEN: ${{ github.token }}
