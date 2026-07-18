@@ -1,0 +1,35 @@
+name: External application integration
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/external-integration.yml"
+      - "crates/fdk-aac-sys/**"
+      - "crates/fdk-aac/src/**"
+      - "crates/fdk-aac/tests/external_application.rs"
+      - "tools/test-external-ffi-consumer.sh"
+  schedule:
+    - cron: "23 5 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  application-patterns:
+    name: streaming, seek, and continuous decode
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Test public Pure Rust application API
+        run: cargo test --locked -p fdk-aac-rust --no-default-features --test external_application
+
+  c-ffi-consumer:
+    name: FFmpeg-style C FFI consumer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Compile and run an external C ABI consumer
+        run: ./tools/test-external-ffi-consumer.sh
