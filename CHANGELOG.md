@@ -16,6 +16,8 @@ reinterpret the version numbers of the original C/C++ fdk-aac project.
   verification, and post-release crates.io/docs.rs availability gates.
 - Added a pinned `mpeghdec` static-symbol audit and a tested Linux namespacing
   procedure that links and executes both codec APIs in either archive order.
+- Added retained AAC-LC throughput, first-frame latency, peak-RSS, and binary-
+  size measurements with intentionally broad catastrophic-regression guards.
 
 ## 0.2.1 - 2026-07-18
 

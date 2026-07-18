@@ -1,0 +1,46 @@
+name: Performance tracking
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/performance.yml"
+      - "benchmarks/**"
+      - "crates/fdk-aac/Cargo.toml"
+      - "crates/fdk-aac/examples/benchmark_decode.rs"
+      - "crates/fdk-aac/src/**"
+      - "tools/check-performance.sh"
+  schedule:
+    - cron: "17 4 * * 4"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  aac-lc-decode:
+    name: AAC-LC decode trend and catastrophe guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Measure release performance
+        run: |
+          mkdir -p target/performance
+          ./tools/check-performance.sh | tee target/performance/summary.txt
+      - name: Add workflow summary
+        if: always()
+        run: |
+          if test -f target/performance/aac-lc-decode.json; then
+            echo '## AAC-LC decode performance' >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat target/performance/aac-lc-decode.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload trend measurement
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: performance-${{ github.sha }}
+          path: target/performance/
+          if-no-files-found: error
+          retention-days: 90
