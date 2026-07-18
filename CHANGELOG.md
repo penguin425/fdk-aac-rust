@@ -14,6 +14,8 @@ reinterpret the version numbers of the original C/C++ fdk-aac project.
   USAC/xHE-AAC, DRC, encoder configuration, and the legacy FFI boundary.
 - Added CycloneDX SBOMs, GitHub build-provenance attestations, published-commit
   verification, and post-release crates.io/docs.rs availability gates.
+- Added a pinned `mpeghdec` static-symbol audit and a tested Linux namespacing
+  procedure that links and executes both codec APIs in either archive order.
 
 ## 0.2.1 - 2026-07-18
 

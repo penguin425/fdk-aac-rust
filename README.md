@@ -89,6 +89,7 @@ history. Detailed migration status is maintained in
 | [`docs/GLOBAL_IMPROVEMENT_REQUESTS.md`](docs/GLOBAL_IMPROVEMENT_REQUESTS.md) | Consolidated improvement requests from codec users and integrators |
 | [`docs/API_COMPATIBILITY.md`](docs/API_COMPATIBILITY.md) | MSRV, SemVer, and sys FFI compatibility policy |
 | [`docs/FUZZING.md`](docs/FUZZING.md) | Continuous fuzzing targets and local reproduction |
+| [`docs/FRAUNHOFER_COEXISTENCE.md`](docs/FRAUNHOFER_COEXISTENCE.md) | Static-link collision audit and namespacing procedure |
 | [`docs/PORT_STATUS.md`](docs/PORT_STATUS.md) | Detailed Rust migration status |
 | [`docs/ANDROID17_XHE_ENCODER.md`](docs/ANDROID17_XHE_ENCODER.md) | Android 17 xHE-AAC encoder source and license evaluation |
 | [`docs/DRC.md`](docs/DRC.md) | DRC metadata, loudness targets, and decoder controls |
