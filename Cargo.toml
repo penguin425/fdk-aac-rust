@@ -3,6 +3,7 @@ members = [
   "crates/fdk-aac-sys",
   "crates/fdk-aac",
 ]
+exclude = ["fuzz"]
 resolver = "2"
 
 [workspace.package]
