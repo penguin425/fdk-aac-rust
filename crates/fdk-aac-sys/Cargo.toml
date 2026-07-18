@@ -14,5 +14,8 @@ categories = ["external-ffi-bindings", "multimedia::audio"]
 links = "fdk-aac-rust-reference"
 build = "build.rs"
 
+[package.metadata.docs.rs]
+all-features = true
+
 [build-dependencies]
 cc = "1"

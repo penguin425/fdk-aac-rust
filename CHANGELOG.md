@@ -12,6 +12,8 @@ reinterpret the version numbers of the original C/C++ fdk-aac project.
   API checks, and an explicit sys FFI declaration snapshot gate.
 - Added daily libFuzzer campaigns for ADTS, LOAS/LATM, raw access units, ASC,
   USAC/xHE-AAC, DRC, encoder configuration, and the legacy FFI boundary.
+- Added CycloneDX SBOMs, GitHub build-provenance attestations, published-commit
+  verification, and post-release crates.io/docs.rs availability gates.
 
 ## 0.2.1 - 2026-07-18
 

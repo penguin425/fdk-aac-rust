@@ -12,6 +12,9 @@ publish = ["crates-io"]
 keywords = ["aac", "audio", "codec", "decoder", "encoder"]
 categories = ["multimedia::audio", "encoding"]
 
+[package.metadata.docs.rs]
+no-default-features = true
+
 [features]
 default = ["ffi"]
 ffi = ["dep:fdk-aac-sys"]
