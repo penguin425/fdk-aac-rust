@@ -13,7 +13,7 @@ jobs:
     name: MSRV, SemVer, and sys ABI
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Test minimum supported Rust version
         run: |
           rustup toolchain install 1.87.0 --profile minimal --no-self-update
@@ -50,7 +50,7 @@ jobs:
             musl: true
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install stable Rust target
         run: rustup update stable --no-self-update && rustup default stable && rustup target add ${{ matrix.target }}
       - name: Install musl tools
@@ -62,7 +62,7 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install stable Rust
         run: rustup update stable --no-self-update && rustup default stable
       - name: Check formatting
