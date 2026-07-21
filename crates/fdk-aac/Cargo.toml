@@ -20,4 +20,4 @@ default = ["ffi"]
 ffi = ["dep:fdk-aac-sys"]
 
 [dependencies]
-fdk-aac-sys = { package = "fdk-aac-rust-sys", version = "0.2.2", path = "../fdk-aac-sys", optional = true }
+fdk-aac-sys = { package = "fdk-aac-rust-sys", version = "0.2.3", path = "../fdk-aac-sys", optional = true }
