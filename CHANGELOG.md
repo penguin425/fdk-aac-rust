@@ -6,6 +6,13 @@ reinterpret the version numbers of the original C/C++ fdk-aac project.
 
 ## Unreleased
 
+## 0.2.3 - 2026-07-22
+
+- Fixed offline docs.rs builds for the Pure Rust crate by avoiding the
+  reference-source checkout during documentation generation.
+- Updated the pinned GitHub Actions for checkout, artifact upload, and build
+  provenance attestation, and updated the `cc` build dependency.
+
 ## 0.2.2 - 2026-07-18
 
 - Added Pure Rust CI on Linux x86-64, Windows MSVC, macOS ARM64, Linux ARM64,

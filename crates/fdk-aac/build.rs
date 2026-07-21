@@ -4,10 +4,40 @@ const UPSTREAM_URL: &str = "https://github.com/mstorsjo/fdk-aac.git";
 const DEFAULT_UPSTREAM_REVISION: &str = "d8e6b1a3aa606c450241632b64b703f21ea31ce3";
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=DOCS_RS");
+    if env::var_os("DOCS_RS").is_some() {
+        prepare_docs_rs_stubs();
+        return;
+    }
     println!("cargo:rerun-if-env-changed=FDK_AAC_SOURCE_DIR");
     println!("cargo:rerun-if-env-changed=FDK_AAC_REVISION");
     let source = upstream_source();
     println!("cargo:rustc-env=FDK_AAC_UPSTREAM_DIR={}", source.display());
+}
+
+fn prepare_docs_rs_stubs() {
+    // docs.rs builds crates offline. Rustdoc only needs these files to exist so
+    // include_str! can expand; their tables are parsed lazily at runtime.
+    let root = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR")).join("docs-rs-stubs");
+    for relative in [
+        "libAACdec/src/aac_rom.cpp",
+        "libAACdec/src/usacdec_ace_ltp.cpp",
+        "libAACdec/src/usacdec_rom.cpp",
+        "libAACenc/src/aacEnc_rom.cpp",
+        "libArithCoding/src/ac_arith_coder.cpp",
+        "libFDK/src/FDK_decorrelate.cpp",
+        "libFDK/src/huff_nodes.cpp",
+        "libFDK/src/FDK_tools_rom.cpp",
+        "libSACdec/src/sac_rom.cpp",
+        "libSBRdec/src/pvc_dec.cpp",
+        "libSBRdec/src/sbr_rom.cpp",
+    ] {
+        let path = root.join(relative);
+        fs::create_dir_all(path.parent().expect("stub parent"))
+            .expect("create docs.rs stub directory");
+        fs::write(path, []).expect("write docs.rs stub");
+    }
+    println!("cargo:rustc-env=FDK_AAC_UPSTREAM_DIR={}", root.display());
 }
 
 fn upstream_source() -> PathBuf {

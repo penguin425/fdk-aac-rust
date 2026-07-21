@@ -14,14 +14,14 @@ dependencies = [
 
 [[package]]
 name = "fdk-aac-rust"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "fdk-aac-rust-sys",
 ]
 
 [[package]]
 name = "fdk-aac-rust-sys"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "cc",
 ]
